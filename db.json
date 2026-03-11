@@ -1,0 +1,90 @@
+{
+  "users": [
+    {
+      "id": "1",
+      "username": "admin",
+      "password": "123",
+      "role": "admin",
+      "name": "Nguyễn Quản Trị"
+    },
+    {
+      "id": "2",
+      "username": "hr01",
+      "password": "123",
+      "role": "hr",
+      "name": "Trần Nhân Sự"
+    },
+    {
+      "id": "3",
+      "username": "nv01",
+      "password": "123",
+      "role": "employee",
+      "name": "Lê Văn Viên"
+    }
+  ],
+  "departments": [
+    {
+      "id": "d1",
+      "name": "Kỹ thuật",
+      "manager": "Nguyễn Văn A"
+    },
+    {
+      "id": "d2",
+      "name": "Kế toán",
+      "manager": "Trần Thị B"
+    }
+  ],
+  "employees": [
+    {
+      "id": "2",
+      "code": "NV002",
+      "name": "Trần Thị B",
+      "deptId": "d2",
+      "contract": "1 năm",
+      "salary": "15M"
+    },
+    {
+      "id": "0795",
+      "code": "NV001",
+      "name": "JON",
+      "deptId": "FW2",
+      "salary": "10M"
+    },
+    {
+      "id": "ecad",
+      "code": "",
+      "name": "",
+      "deptId": "",
+      "salary": ""
+    },
+    {
+      "id": "1a1f",
+      "code": "",
+      "name": "",
+      "deptId": "",
+      "salary": ""
+    },
+    {
+      "id": "0572",
+      "code": "",
+      "name": "",
+      "deptId": "",
+      "salary": ""
+    },
+    {
+      "id": "a63c",
+      "code": "",
+      "name": "",
+      "deptId": "",
+      "salary": ""
+    },
+    {
+      "id": "ddb2",
+      "code": "",
+      "name": "",
+      "deptId": "",
+      "salary": ""
+    }
+  ],
+  "$schema": "./node_modules/json-server/schema.json"
+}
