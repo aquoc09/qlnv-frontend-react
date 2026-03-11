@@ -62,6 +62,17 @@ const handleUpdate = async () => {
   });
 };
 
+const handleEdit = (emp) => {
+  setEditingId(emp.id);
+
+  setForm({
+    code: emp.code,
+    name: emp.name,
+    deptId: emp.deptId,
+    salary: emp.salary,
+  });
+};
+
 const [editingId, setEditingId] = useState(null);
 
   useEffect(() => {

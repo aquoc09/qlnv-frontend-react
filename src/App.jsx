@@ -11,7 +11,10 @@ import Dashboard from "./pages/Dashboard";
 import MainLayout from "./components/MainLayout";
 
 function App() {
-  const user = JSON.parse(localStorage.getItem("user") || "null");
+ const user = {
+  username: "admin",
+  role: "admin"
+};
 
   return (
     <Router>

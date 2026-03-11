@@ -17,6 +17,63 @@ const DeptList = () => {
     loadData();
   }, []);
 
+  const [form, setForm] = useState({
+  name: "",
+  manager: "",
+});
+
+const [editingId, setEditingId] = useState(null);
+
+const handleChange = (e) => {
+  setForm({
+    ...form,
+    [e.target.name]: e.target.value,
+  });
+};
+
+const handleAdd = async () => {
+  const res = await api.post("/departments", form);
+
+  setDepts([...depts, res.data]);
+
+  setForm({
+    name: "",
+    manager: "",
+  });
+};
+
+const handleEdit = (dept) => {
+  setEditingId(dept.id);
+
+  setForm({
+    name: dept.name,
+    manager: dept.manager,
+  });
+};
+
+const handleUpdate = async () => {
+  await api.put(`/departments/${editingId}`, form);
+
+  setDepts(
+    depts.map((d) =>
+      d.id === editingId ? { ...d, ...form } : d
+    )
+  );
+
+  setEditingId(null);
+
+  setForm({
+    name: "",
+    manager: "",
+  });
+};
+
+const handleDelete = async (id) => {
+  await api.delete(`/departments/${id}`);
+
+  setDepts(depts.filter((d) => d.id !== id));
+};
+
   return (
     <div style={containerStyle}>
       <div style={{ marginBottom: "35px" }}>
@@ -36,6 +93,27 @@ const DeptList = () => {
       </div>
 
       <div style={{ overflowX: "auto" }}>
+      <div style={{ marginBottom: "20px", display: "flex", gap: "10px" }}>
+  <input
+    name="name"
+    placeholder="Tên phòng ban"
+    value={form.name}
+    onChange={handleChange}
+  />
+
+  <input
+    name="manager"
+    placeholder="Trưởng phòng"
+    value={form.manager}
+    onChange={handleChange}
+  />
+
+  {editingId ? (
+    <button onClick={handleUpdate}>Cập nhật</button>
+  ) : (
+    <button onClick={handleAdd}>Thêm</button>
+  )}
+</div>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr
@@ -77,9 +155,20 @@ const DeptList = () => {
 
                 {/* THAO TÁC */}
                 <td style={tdStyle}>
-                  <button style={editBtn}>Chi tiết</button>
-                  <button style={deleteBtn}>Xóa</button>
-                </td>
+  <button
+    style={editBtn}
+    onClick={() => handleEdit(d)}
+  >
+    Sửa
+  </button>
+
+  <button
+    style={deleteBtn}
+    onClick={() => handleDelete(d.id)}
+  >
+    Xóa
+  </button>
+</td>
               </tr>
             ))}
           </tbody>
