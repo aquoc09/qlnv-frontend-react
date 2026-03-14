@@ -1,16 +1,4 @@
-import React, { useState } from "react";
-import api from "../services/api";
-import { useNavigate } from "react-router-dom";
-
-const Login = () => {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const navigate = useNavigate();
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await api.get("/users");
+g");
       const user = res.data.find(
         (u) => u.username === username.trim() && u.password === password.trim(),
       );
