@@ -1,12 +1,17 @@
 import axiosClient from "./axiosClient";
 
-const leaveBalanceApi = {
-    // Lấy toàn bộ danh sách quỹ phép từ MySQL
-    getAll: () => axiosClient.get('/leave-balances'),
+const leaveRecordApi = {
+    // Lấy tất cả đơn nghỉ từ MySQL
+    getAll: () => axiosClient.get('/leave-records'),
     
-    // Cập nhật số ngày phép (điều chỉnh thủ công)
-    // URL: PUT /leave-balances/{id}
-    update: (id, data) => axiosClient.put(`/leave-balances/${id}`, data),
+    // Tạo đơn nghỉ mới
+    create: (data) => axiosClient.post('/leave-records', data),
+    
+    // Duyệt hoặc Từ chối (Dùng Request Param ?status=...)
+    updateStatus: (id, status) => axiosClient.put(`/leave-records/${id}/status?status=${status}`),
+    
+    // Xóa đơn nghỉ
+    delete: (id) => axiosClient.delete(`/leave-records/${id}`),
 };
 
-export default leaveBalanceApi;
+export default leaveRecordApi;
