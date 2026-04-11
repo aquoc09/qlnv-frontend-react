@@ -15,14 +15,22 @@ const SalaryList = () => {
                 employeeApi.getAll()
             ]);
 
-            // Vét mảng dữ liệu từ BE (Chấp nhận cả .result hoặc mảng trực tiếp)
-            const salaryData = resSalary?.result || (Array.isArray(resSalary) ? resSalary : []);
-            const employeeData = resEmp?.result || (Array.isArray(resEmp) ? resEmp : []);
+            // HÀM BÓC TÁCH GỠ LỚP RESULT LỒNG NHAU (Fix lỗi trắng bảng)
+            const cleanData = (res) => {
+                const raw = Array.isArray(res) ? res : (res?.result || []);
+                // Nhìn F12 của anh: mỗi phần tử lại có .result bên trong
+                return raw.map(item => (item.result ? item.result : item));
+            };
 
-            setSalaries(salaryData);
-            setEmployees(employeeData);
+            const finalSalaries = cleanData(resSalary);
+            const finalEmployees = cleanData(resEmp);
+
+            setSalaries(finalSalaries);
+            setEmployees(finalEmployees);
+            
+            console.log("Dữ liệu Lương đã bóc trần:", finalSalaries);
         } catch (error) {
-            console.error("Lỗi kết nối MySQL:", error);
+            console.error("Lỗi MySQL:", error);
         } finally {
             setLoading(false);
         }
@@ -30,39 +38,48 @@ const SalaryList = () => {
 
     useEffect(() => { fetchData(); }, []);
 
-    // HÀM TÌM TÊN NHÂN VIÊN (Fix lỗi cột nhân viên trống)
+    // HÀM TÌM TÊN NHÂN VIÊN
     const getEmployeeName = (item) => {
-        const id = item.employeeId || item.employee_id || item.employee?.id;
-        if (item.employee?.fullName || item.employee?.full_name) {
-            return item.employee.fullName || item.employee.full_name;
-        }
-        const found = employees.find(e => e.id === id || e.employeeId === id);
-        return found ? (found.fullName || found.full_name) : `Mã NV: ${id || '???'}`;
+        const id = item.employeeId || item.employee_id;
+        const found = employees.find(e => e.id === id);
+        return found ? found.fullName : `NV - ${id || '???'}`;
     };
 
+    // 1. CHỨC NĂNG CHỐT LƯƠNG THÁNG NÀY (Gọi API BE)
     const handleCalculate = async () => {
-        if (!window.confirm("Bắt đầu tính lương tháng hiện tại?")) return;
+        const month = new Date().getMonth() + 1;
+        const year = new Date().getFullYear();
+        if (!window.confirm(`Xác nhận tính lương tháng ${month}/${year} cho toàn bộ nhân viên?`)) return;
+        
         try {
-            const month = new Date().getMonth() + 1;
-            const year = new Date().getFullYear();
             await salaryApi.calculate(month, year);
-            alert("Đã chốt lương thành công!");
+            alert("Hệ thống đã chốt lương thành công!");
             fetchData();
         } catch (error) {
-            // Hiển thị thông báo lỗi 999 từ BE cho anh thấy
-            const msg = error.response?.data?.message || "Lỗi quyền hạn (999)";
-            alert(`Không thể tính lương: ${msg}`);
+            alert("Lỗi: " + (error.response?.data?.message || "999 - Không có quyền!"));
         }
     };
 
+    // 2. CHỨC NĂNG THANH TOÁN (Cập nhật trạng thái PAID)
     const handlePay = async (id) => {
         try {
             await salaryApi.updateStatus(id, "PAID");
-            alert("Thanh toán thành công!");
+            alert("Đã xác nhận thanh toán!");
             fetchData();
         } catch (error) {
-            const msg = error.response?.data?.message || "Lỗi quyền hạn (999)";
-            alert(`Lỗi thanh toán: ${msg}`);
+            alert("Lỗi thanh toán: " + (error.response?.data?.message || "999"));
+        }
+    };
+
+    // 3. CHỨC NĂNG XÓA
+    const handleDelete = async (id) => {
+        if (!window.confirm("Anh có chắc muốn xóa bản ghi lương này?")) return;
+        try {
+            await salaryApi.delete(id);
+            alert("Đã xóa bản ghi!");
+            fetchData();
+        } catch (error) {
+            alert("Lỗi xóa: " + (error.response?.data?.message || "999"));
         }
     };
 
@@ -70,7 +87,7 @@ const SalaryList = () => {
         return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
     };
 
-    if (loading) return <div style={{ padding: '20px' }}>Đang nạp bảng lương MySQL...</div>;
+    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu từ MySQL...</div>;
 
     return (
         <div style={styles.container}>
@@ -97,7 +114,7 @@ const SalaryList = () => {
                                 <tr key={s.id || index} style={styles.tr}>
                                     <td style={styles.td}><b>{getEmployeeName(s)}</b></td>
                                     <td style={styles.td}>
-                                        {/* Fix lỗi hiển thị tháng/năm trống */}
+                                        {/* Bóc tách trường từ result của BE */}
                                         {(s.month || '---')}/{(s.year || '---')}
                                     </td>
                                     <td style={styles.td}>{formatVND(s.baseSalary || s.base_salary)}</td>
@@ -110,24 +127,19 @@ const SalaryList = () => {
                                             backgroundColor: (s.status === 'PAID' || s.status === 'Đã thanh toán') ? '#d1f2eb' : '#fff3cd',
                                             color: (s.status === 'PAID' || s.status === 'Đã thanh toán') ? '#16a085' : '#856404'
                                         }}>
-                                            {s.status === 'PAID' ? 'Đã thanh toán' : 'Chờ duyệt chi'}
+                                            {(s.status === 'PAID' || s.status === 'Đã thanh toán') ? 'Đã thanh toán' : 'Chờ duyệt chi'}
                                         </span>
                                     </td>
                                     <td style={styles.td}>
                                         {(s.status !== 'PAID' && s.status !== 'Đã thanh toán') && (
                                             <button style={styles.payBtn} onClick={() => handlePay(s.id)}>Thanh toán</button>
                                         )}
-                                        <button style={styles.delBtn} onClick={async () => {
-                                            if(window.confirm("Xóa bản ghi này?")) {
-                                                try { await salaryApi.delete(s.id); fetchData(); }
-                                                catch(e) { alert("Lỗi xóa: " + (e.response?.data?.message || "999")); }
-                                            }
-                                        }}>Xóa</button>
+                                        <button style={styles.delBtn} onClick={() => handleDelete(s.id)}>Xóa</button>
                                     </td>
                                 </tr>
                             ))
                         ) : (
-                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Bảng lương trống hoặc bạn chưa có quyền xem (999).</td></tr>
+                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Bảng lương trống. Hãy nhấn "Chốt lương" để bắt đầu!</td></tr>
                         )}
                     </tbody>
                 </table>
