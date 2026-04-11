@@ -7,19 +7,18 @@ const UserList = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // 1. LẤY DỮ LIỆU TỪ API BE
+    // 1. LẤY DỮ LIỆU VÀ BÓC TRẦN (Gỡ lớp result lồng nhau)
     const fetchUsers = async () => {
         setLoading(true);
         try {
             const response = await userApi.getAll();
-            console.log("Kiểm tra dữ liệu BE trả về:", response);
             
-            if (response && response.code === 1000) {
-                setUsers(response.result || []);
-            } else if (Array.isArray(response)) {
-                const extracted = response.map(item => item.result || item).filter(Boolean);
-                setUsers(extracted);
-            }
+            // HÀM BÓC TÁCH: Nếu item có .result thì lấy .result (đây là ruột chứa tên, ngày sinh)
+            const rawData = Array.isArray(response) ? response : (response?.result || []);
+            const cleanUsers = rawData.map(item => (item.result ? item.result : item));
+            
+            setUsers(cleanUsers);
+            console.log("Dữ liệu tài khoản đã bóc trần:", cleanUsers);
         } catch (error) {
             console.error("Lỗi lấy danh sách tài khoản:", error);
         } finally {
@@ -27,41 +26,37 @@ const UserList = () => {
         }
     };
 
-    useEffect(() => {
-        fetchUsers();
-    }, []);
+    useEffect(() => { fetchUsers(); }, []);
 
-    // 2. HÀM THÊM TÀI KHOẢN (GỬI ĐỦ HỌ TÊN, NGÀY SINH, QUYỀN)
+    // 2. HÀM THÊM TÀI KHOẢN (Gửi dữ liệu chuẩn BE Java)
     const handleAddUser = async (e) => {
         e.preventDefault();
         setIsSubmitting(true);
         const formData = new FormData(e.target);
-        const formProps = Object.fromEntries(formData.entries());
+        const f = Object.fromEntries(formData.entries());
         
         const dataSubmit = {
-            username: formProps.username,
-            password: formProps.password,
-            firstName: formProps.firstName,
-            lastName: formProps.lastName,
-            dob: formProps.dob,
-            roles: [formProps.role] // Gửi mảng quyền xuống BE
+            username: f.username,
+            password: f.password,
+            firstName: f.firstName,
+            lastName: f.lastName,
+            dob: f.dob,
+            roles: [f.role] 
         };
 
         try {
-            const response = await userApi.create(dataSubmit);
-            if (response && (response.code === 1000 || response)) {
-                alert("Thêm tài khoản thành công!");
-                setIsModalOpen(false);
-                fetchUsers();
-            }
+            await userApi.create(dataSubmit);
+            alert("Đã tạo tài khoản thành công vào MySQL!");
+            setIsModalOpen(false);
+            await fetchUsers(); // Load lại để hiện người mới
         } catch (error) {
-            alert("Lỗi: Không thể thêm tài khoản. Anh kiểm tra lại Username nhé!");
+            alert("Lỗi: " + (error.response?.data?.message || "Kiểm tra lại Username!"));
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu từ MySQL...</div>;
+    if (loading) return <div style={{ padding: '20px' }}>Đang bóc tách dữ liệu người dùng...</div>;
 
     return (
         <div style={styles.container}>
@@ -85,35 +80,38 @@ const UserList = () => {
                             users.map((u, index) => (
                                 <tr key={u.id || index} style={styles.tr}>
                                     <td style={styles.td}><b>{u.username}</b></td>
-                                    {/* Hiển thị Họ và Tên từ BE */}
-                                    <td style={styles.td}>{u.firstName} {u.lastName}</td>
-                                    {/* Hiển thị Ngày sinh từ BE */}
-                                    <td style={styles.td}>{u.dob || "---"}</td>
+                                    {/* BÓC TRẦN TÊN: Dò tìm mọi trường BE có thể trả về */}
+                                    <td style={styles.td}>
+                                        {(u.firstName || u.first_name || '') + ' ' + (u.lastName || u.last_name || '')}
+                                    </td>
+                                    {/* BÓC TRẦN NGÀY SINH */}
+                                    <td style={styles.td}>{u.dob || u.dateOfBirth || "---"}</td>
                                     <td style={styles.td}>
                                         {u.roles?.map((r, i) => (
-                                            <span key={i} style={styles.roleBadge}>{r.name || r}</span>
+                                            <span key={i} style={styles.roleBadge}>
+                                                {typeof r === 'object' ? (r.name || r.roleName) : r}
+                                            </span>
                                         ))}
                                     </td>
                                 </tr>
                             ))
                         ) : (
-                            <tr><td colSpan="4" style={{ textAlign: 'center', padding: '40px' }}>Không có dữ liệu.</td></tr>
+                            <tr><td colSpan="4" style={{ textAlign: 'center', padding: '40px' }}>MySQL chưa có tài khoản nào.</td></tr>
                         )}
                     </tbody>
                 </table>
             </div>
 
-            {/* MODAL THÊM TÀI KHOẢN */}
             {isModalOpen && (
                 <div style={styles.overlay}>
                     <div style={styles.modal}>
-                        <h3>THÊM TÀI KHOẢN MỚI</h3>
+                        <h3 style={{marginTop: 0}}>THÊM TÀI KHOẢN MỚI</h3>
                         <form onSubmit={handleAddUser}>
-                            <input name="username" placeholder="Tên đăng nhập" required style={styles.input}/>
+                            <input name="username" placeholder="Tên đăng nhập (Email)" required style={styles.input}/>
                             <input name="password" type="password" placeholder="Mật khẩu" required style={styles.input}/>
                             
                             <div style={{display: 'flex', gap: '10px', marginTop: '10px'}}>
-                                <input name="firstName" placeholder="Họ" required style={styles.input}/>
+                                <input name="firstName" placeholder="Họ và tên đệm" required style={styles.input}/>
                                 <input name="lastName" placeholder="Tên" required style={styles.input}/>
                             </div>
 
@@ -125,16 +123,16 @@ const UserList = () => {
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Quyền hạn:</label>
                                 <select name="role" style={styles.input} required>
-                                    <option value="ROLE_ADMIN">QUẢN TRỊ VIÊN (ADMIN)</option>
-                                    <option value="ROLE_HR">NHÂN SỰ (HR)</option>
-                                    <option value="ROLE_USER">NHÂN VIÊN (USER)</option>
+                                    <option value="ADMIN">QUẢN TRỊ VIÊN (ADMIN)</option>
+                                    <option value="HR">NHÂN SỰ (HR)</option>
+                                    <option value="USER">NHÂN VIÊN (USER)</option>
                                 </select>
                             </div>
                             
                             <div style={styles.btnGroup}>
                                 <button type="button" onClick={() => setIsModalOpen(false)} style={styles.btnCancel}>Hủy</button>
                                 <button type="submit" disabled={isSubmitting} style={styles.btnSave}>
-                                    {isSubmitting ? "Đang lưu..." : "Xác nhận tạo"}
+                                    {isSubmitting ? "Đang lưu..." : "Lưu MySQL"}
                                 </button>
                             </div>
                         </form>
@@ -163,8 +161,8 @@ const styles = {
     label: { display: 'block', fontWeight: 'bold', fontSize: '12px', marginBottom: '5px' },
     input: { width: '100%', padding: '10px', marginTop: '5px', border: '1px solid #ddd', borderRadius: '6px', boxSizing: 'border-box' },
     btnGroup: { display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' },
-    btnCancel: { padding: '10px 20px', backgroundColor: '#eee', border: 'none', borderRadius: '6px' },
-    btnSave: { padding: '10px 20px', backgroundColor: '#2980b9', color: '#fff', border: 'none', borderRadius: '6px' }
+    btnCancel: { padding: '10px 20px', backgroundColor: '#eee', border: 'none', borderRadius: '6px', cursor: 'pointer' },
+    btnSave: { padding: '10px 20px', backgroundColor: '#2980b9', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }
 };
 
 export default UserList;
