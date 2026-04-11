@@ -11,20 +11,21 @@ const RewardDisciplineList = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            // Gọi cả 2 API cùng lúc: Thưởng phạt và Danh sách nhân viên
             const [resData, resEmp] = await Promise.all([
                 rewardDisciplineApi.getAll(),
                 employeeApi.getAll()
             ]);
 
+            // Bóc tách Thưởng Phạt
             if (resData && resData.code === 1000) setList(resData.result || []);
             else if (Array.isArray(resData)) setList(resData);
 
+            // Bóc tách Nhân Viên - Quan trọng để hiện tên
             if (resEmp && resEmp.code === 1000) setEmployees(resEmp.result || []);
             else if (Array.isArray(resEmp)) setEmployees(resEmp);
             
         } catch (error) {
-            console.error("Lỗi kết nối MySQL:", error);
+            console.error("Lỗi MySQL:", error);
         } finally {
             setLoading(false);
         }
@@ -32,18 +33,20 @@ const RewardDisciplineList = () => {
 
     useEffect(() => { fetchData(); }, []);
 
-    // HÀM TÌM TÊN NHÂN VIÊN DỰA VÀO ID (Để fix lỗi ??? của anh)
-    const getEmployeeName = (item) => {
-        // Trường hợp 1: BE đã JOIN sẵn và trả về object employee
-        if (item.employee?.fullName) return item.employee.fullName;
-        if (item.employee?.full_name) return item.employee.full_name;
+    // HÀM FIX LỖI TRỐNG TÊN: Tìm tên nhân viên dựa vào mọi trường có thể có
+    const displayEmployee = (item) => {
+        // 1. Nếu BE lồng sẵn object employee
+        const empInItem = item.employee || {};
+        const name = empInItem.fullName || empInItem.full_name || empInItem.name;
+        if (name) return name;
 
-        // Trường hợp 2: BE chỉ trả về ID, ta tìm trong danh sách employees đã nạp
-        const emp = employees.find(e => e.id === (item.employeeId || item.employee_id));
-        if (emp) return emp.fullName || emp.full_name;
+        // 2. Nếu không có object lồng, tìm trong danh sách employees đã tải về
+        const targetId = item.employeeId || item.employee_id;
+        const found = employees.find(e => e.id === targetId || e.employeeId === targetId);
+        if (found) return found.fullName || found.full_name || found.name;
 
-        // Trường hợp cuối: Không tìm thấy thì hiện ID
-        return `NV-${item.employeeId || item.employee_id || 'Chưa rõ'}`;
+        // 3. Cuối cùng nếu không thấy tên thì hiện ID
+        return targetId ? `NV - ${targetId}` : "Chưa xác định";
     };
 
     const handleSubmit = async (e) => {
@@ -52,18 +55,11 @@ const RewardDisciplineList = () => {
         const data = Object.fromEntries(formData.entries());
         try {
             await rewardDisciplineApi.create(data);
-            alert("Lưu thành công vào MySQL!");
+            alert("Lưu thành công!");
             setIsModalOpen(false);
             fetchData();
         } catch (error) {
-            alert("Lỗi khi lưu dữ liệu!");
-        }
-    };
-
-    const handleDelete = async (id) => {
-        if (window.confirm("Xóa bản ghi này?")) {
-            try { await rewardDisciplineApi.delete(id); fetchData(); } 
-            catch (error) { alert("Lỗi khi xóa!"); }
+            alert("Lỗi khi lưu!");
         }
     };
 
@@ -92,8 +88,8 @@ const RewardDisciplineList = () => {
                         {list.length > 0 ? list.map((item, index) => (
                             <tr key={item.id || index} style={styles.tr}>
                                 <td style={styles.td}>
-                                    {/* SỬ DỤNG HÀM TÌM TÊN Ở ĐÂY */}
-                                    <b>{getEmployeeName(item)}</b>
+                                    {/* Gọi hàm hiển thị nhân viên đã fix */}
+                                    <b>{displayEmployee(item)}</b>
                                 </td>
                                 <td style={styles.td}>
                                     <span style={{...styles.badge, backgroundColor: item.type === 'REWARD' ? '#d4edda' : '#f8d7da', color: item.type === 'REWARD' ? '#155724' : '#721c24'}}>
@@ -106,11 +102,11 @@ const RewardDisciplineList = () => {
                                 <td style={styles.td}>{item.decisionDate || item.decision_date || '---'}</td>
                                 <td style={styles.td}><i>{item.reason || '---'}</i></td>
                                 <td style={styles.td}>
-                                    <button style={styles.delBtn} onClick={() => handleDelete(item.id)}>Xóa</button>
+                                    <button style={styles.delBtn} onClick={async () => { if(window.confirm("Xóa?")) { await rewardDisciplineApi.delete(item.id); fetchData(); } }}>Xóa</button>
                                 </td>
                             </tr>
                         )) : (
-                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Chưa có dữ liệu thật.</td></tr>
+                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Chưa có dữ liệu từ MySQL.</td></tr>
                         )}
                     </tbody>
                 </table>
@@ -124,11 +120,10 @@ const RewardDisciplineList = () => {
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Nhân viên:</label>
                                 <select name="employeeId" style={styles.input} required>
-                                    <option value="">-- Chọn nhân viên từ danh sách --</option>
+                                    <option value="">-- Chọn nhân viên --</option>
                                     {employees.map(emp => (
                                         <option key={emp.id} value={emp.id}>
-                                            {/* Hiện cả ID và Tên cho chắc chắn */}
-                                            {emp.id} - {emp.fullName || emp.full_name}
+                                            ID: {emp.id} - {emp.fullName || emp.full_name || emp.name}
                                         </option>
                                     ))}
                                 </select>
