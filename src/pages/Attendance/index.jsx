@@ -5,71 +5,97 @@ const AttendanceList = () => {
     const [list, setList] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        const fetchAttendance = async () => {
-            try {
-                const response = await attendanceApi.getAll();
-                console.log("Dữ liệu thực tế từ BE của anh:", response);
-                
-                // 1. Kiểm tra nếu có data thật từ response.result
-                if (response && response.code === 1000 && response.result && response.result.length > 0) {
-                    setList(response.result);
-                } 
-                // 2. Kiểm tra nếu response là một mảng trực tiếp có dữ liệu
-                else if (Array.isArray(response) && response.length > 0) {
-                    const extractedData = response.map(item => item.result || item).filter(Boolean);
-                    setList(extractedData);
-                }
-                // 3. NẾU TRỐNG (DO LỖI 999) - TỰ ĐỘNG LẤY DATA GIẢ ĐỂ DEMO
-                else {
-                    setList([
-                        { id: 1, workDate: "2026-04-10", checkIn: "08:00:00", checkOut: "17:05:20", status: "PRESENT" },
-                        { id: 2, workDate: "2026-04-09", checkIn: "07:55:12", checkOut: "17:00:05", status: "PRESENT" },
-                        { id: 3, workDate: "2026-04-08", checkIn: "08:15:00", checkOut: "17:10:00", status: "LATE" },
-                        { id: 4, workDate: "2026-04-07", checkIn: "08:02:00", checkOut: "17:00:00", status: "PRESENT" },
-                        { id: 5, workDate: "2026-04-06", checkIn: "07:50:00", checkOut: "16:30:00", status: "EARLY_LEAVE" }
-                    ]);
-                }
-            } catch (error) {
-                console.error("Lỗi lấy danh sách chấm công:", error);
-                // Dữ liệu dự phòng cuối cùng nếu API sập hoàn toàn
-                setList([
-                    { id: 1, workDate: "2026-04-11", checkIn: "08:00:00", checkOut: "Chưa ra", status: "PRESENT" }
-                ]);
-            } finally {
-                setLoading(false);
+    // 1. HÀM LẤY DATA THẬT
+    const fetchAttendance = async () => {
+        setLoading(true);
+        try {
+            const response = await attendanceApi.getAll();
+            // Bóc tách dữ liệu chuẩn từ result của BE anh
+            if (response && response.code === 1000) {
+                setList(response.result || []);
+            } else if (Array.isArray(response)) {
+                setList(response);
             }
-        };
+        } catch (error) {
+            console.error("Lỗi kết nối API:", error);
+            setList([]); // Nếu lỗi thì để danh sách trống, không dùng data giả nữa
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
         fetchAttendance();
     }, []);
 
-    // Hàm hiển thị Label trạng thái cho chuyên nghiệp
+    // 2. CHỨC NĂNG CHECK-IN
+    const handleCheckIn = async () => {
+        try {
+            await attendanceApi.checkIn();
+            alert("Điểm danh VÀO thành công!");
+            fetchAttendance();
+        } catch (error) {
+            alert("Lỗi: Bạn đã Check-in hôm nay rồi hoặc phiên làm việc chưa kết thúc!");
+        }
+    };
+
+    // 3. CHỨC NĂNG CHECK-OUT
+    const handleCheckOut = async () => {
+        try {
+            await attendanceApi.checkOut();
+            alert("Điểm danh RA thành công!");
+            fetchAttendance();
+        } catch (error) {
+            alert("Lỗi: Bạn chưa Check-in hoặc đã Check-out rồi!");
+        }
+    };
+
+    // 4. CHỨC NĂNG XÓA (ADMIN)
+    const handleDelete = async (id) => {
+        if (window.confirm("Anh có chắc muốn xóa bản ghi chấm công này?")) {
+            try {
+                await attendanceApi.delete(id);
+                fetchAttendance();
+            } catch (error) {
+                alert("Không thể xóa bản ghi này!");
+            }
+        }
+    };
+
     const renderStatus = (status) => {
         switch(status) {
             case 'PRESENT': return <span style={{...styles.badge, backgroundColor: '#d4edda', color: '#155724'}}>Đúng giờ</span>;
             case 'LATE': return <span style={{...styles.badge, backgroundColor: '#fff3cd', color: '#856404'}}>Đi muộn</span>;
             case 'EARLY_LEAVE': return <span style={{...styles.badge, backgroundColor: '#f8d7da', color: '#721c24'}}>Về sớm</span>;
-            default: return <span style={styles.badge}>{status}</span>;
+            default: return <span style={styles.badge}>{status || 'Chưa xác định'}</span>;
         }
     };
 
-    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu chấm công...</div>;
+    if (loading) return <div style={{ padding: '20px' }}>Đang kết nối cơ sở dữ liệu...</div>;
 
     return (
         <div style={styles.container}>
             <div style={styles.header}>
-                <h2 style={styles.title}>| QUẢN LÝ CHẤM CÔNG</h2>
-                <div style={styles.info}>Hệ thống ghi nhận thời gian làm việc thực tế</div>
+                <div>
+                    <h2 style={styles.title}>| QUẢN LÝ CHẤM CÔNG</h2>
+                    <p style={styles.info}>Dữ liệu ghi nhận từ hệ thống máy chủ</p>
+                </div>
+                {/* NHÓM NÚT CHỨC NĂNG THỰC TẾ */}
+                <div style={styles.actionGroup}>
+                    <button onClick={handleCheckIn} style={styles.btnIn}>VÀO CA (Check-in)</button>
+                    <button onClick={handleCheckOut} style={styles.btnOut}>RA CA (Check-out)</button>
+                </div>
             </div>
             
             <div style={styles.tableWrapper}>
                 <table style={styles.table}>
                     <thead>
                         <tr style={styles.tableHeader}>
-                            <th style={styles.th}>Ngày làm</th>
+                            <th style={styles.th}>Ngày làm việc</th>
                             <th style={styles.th}>Giờ vào</th>
                             <th style={styles.th}>Giờ ra</th>
                             <th style={styles.th}>Trạng thái</th>
+                            <th style={styles.th}>Thao tác</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -83,15 +109,21 @@ const AttendanceList = () => {
                                     <td style={{ ...styles.td, color: '#dc3545', fontWeight: 'bold' }}>
                                         {item.checkOut || item.check_out || '---'}
                                     </td>
+                                    <td style={styles.td}>{renderStatus(item.status)}</td>
                                     <td style={styles.td}>
-                                        {renderStatus(item.status)}
+                                        <button 
+                                            onClick={() => handleDelete(item.id)} 
+                                            style={styles.btnDel}
+                                        >
+                                            Xóa
+                                        </button>
                                     </td>
                                 </tr>
                             ))
                         ) : (
                             <tr>
-                                <td colSpan="4" style={{ textAlign: 'center', padding: '40px' }}>
-                                    <b>Không có dữ liệu chấm công.</b>
+                                <td colSpan="5" style={{ textAlign: 'center', padding: '40px' }}>
+                                    Hiện chưa có dữ liệu chấm công thật trong MySQL.
                                 </td>
                             </tr>
                         )}
@@ -104,16 +136,20 @@ const AttendanceList = () => {
 
 const styles = {
     container: { padding: '40px', backgroundColor: '#f4f7f6', minHeight: '100vh' },
-    header: { marginBottom: '30px' },
+    header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' },
     title: { margin: 0, color: '#2c3e50', fontSize: '24px' },
-    info: { color: '#666', marginTop: '5px' },
+    info: { color: '#666', margin: 0 },
+    actionGroup: { display: 'flex', gap: '10px' },
+    btnIn: { padding: '10px 20px', backgroundColor: '#27ae60', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' },
+    btnOut: { padding: '10px 20px', backgroundColor: '#e67e22', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' },
+    btnDel: { padding: '5px 10px', backgroundColor: '#eb4d4b', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' },
     tableWrapper: { backgroundColor: '#fff', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' },
     table: { width: '100%', borderCollapse: 'collapse' },
-    tableHeader: { backgroundColor: '#27ae60', color: '#fff' },
-    th: { padding: '15px', textAlign: 'left', fontWeight: 'bold' },
+    tableHeader: { backgroundColor: '#2c3e50', color: '#fff' },
+    th: { padding: '15px', textAlign: 'left' },
     td: { padding: '15px', borderBottom: '1px solid #eee' },
     tr: { transition: '0.3s' },
-    badge: { padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase' }
+    badge: { padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' }
 };
 
 export default AttendanceList;

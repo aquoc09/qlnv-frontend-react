@@ -1,12 +1,13 @@
 import axios from 'axios';
 
 const axiosClient = axios.create({
-   
+    
     baseURL: 'https://qlnv-backend-spring-production.up.railway.app/qlnv-spring', 
+    //baseURL: 'http://localhost:8080/qlnv-spring', 
     headers: { 'Content-Type': 'application/json' },
 });
 
-// 1. Gửi Token đi kèm mỗi Request (QUAN TRỌNG ĐỂ XÓA ĐƯỢC)
+
 axiosClient.interceptors.request.use((config) => {
     const token = localStorage.getItem('token');
     if (token) {

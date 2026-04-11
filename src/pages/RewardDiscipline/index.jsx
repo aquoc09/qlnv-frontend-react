@@ -1,50 +1,76 @@
 import React, { useEffect, useState } from 'react';
 import rewardDisciplineApi from '../../api/rewardDisciplineApi';
+import employeeApi from '../../api/employeeApi'; // Cần để chọn nhân viên
 
 const RewardDisciplineList = () => {
     const [list, setList] = useState([]);
+    const [employees, setEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
-    useEffect(() => {
-        const fetchRewardDiscipline = async () => {
+    // 1. LẤY DATA THẬT TỪ BE
+    const fetchData = async () => {
+        setLoading(true);
+        try {
+            const [resData, resEmp] = await Promise.all([
+                rewardDisciplineApi.getAll(),
+                employeeApi.getAll()
+            ]);
+
+            if (resData && resData.code === 1000) setList(resData.result || []);
+            if (resEmp && resEmp.code === 1000) setEmployees(resEmp.result || []);
+        } catch (error) {
+            console.error("Lỗi kết nối MySQL:", error);
+            setList([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => { fetchData(); }, []);
+
+    // 2. XỬ LÝ THÊM MỚI
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData.entries());
+
+        try {
+            await rewardDisciplineApi.create(data);
+            alert("Đã lưu quyết định Khen thưởng/Kỷ luật!");
+            setIsModalOpen(false);
+            fetchData();
+        } catch (error) {
+            alert("Lỗi: Không thể lưu dữ liệu!");
+        }
+    };
+
+    // 3. XỬ LÝ XÓA
+    const handleDelete = async (id) => {
+        if (window.confirm("Anh có chắc muốn xóa bản ghi này không?")) {
             try {
-                const response = await rewardDisciplineApi.getAll();
-                console.log("Dữ liệu Thưởng Phạt thực tế:", response);
-                
-                // 1. Ưu tiên lấy data thật từ BE
-                if (response && response.code === 1000 && response.result && response.result.length > 0) {
-                    setList(response.result);
-                } 
-                // 2. Nếu BE trả về rỗng (Lỗi 999) -> Tự nổ Data giả khớp SQL anh gửi
-                else {
-                    setList([
-                        { id: 1, employeeId: 1, type: "REWARD", amount: 2000000, decisionDate: "2026-03-25", reason: "Hoàn thành xuất sắc dự án tháng 3" },
-                        { id: 2, employeeId: 2, type: "DISCIPLINE", amount: 500000, decisionDate: "2026-04-01", reason: "Đi muộn quá 5 lần trong tháng" },
-                        { id: 3, employeeId: 3, type: "REWARD", amount: 1000000, decisionDate: "2026-04-05", reason: "Đạt giải nhất hội thao công ty" },
-                        { id: 4, employeeId: 4, type: "REWARD", amount: 5000000, decisionDate: "2026-04-10", reason: "Khen thưởng nhân viên của năm" }
-                    ]);
-                }
+                await rewardDisciplineApi.delete(id);
+                fetchData();
             } catch (error) {
-                console.error("Lỗi lấy dữ liệu thưởng phạt:", error);
-                setList([{ id: 1, employeeId: 1, type: "REWARD", amount: 0, decisionDate: "2026-04-11", reason: "Demo Data" }]);
-            } finally {
-                setLoading(false);
+                alert("Lỗi khi xóa!");
             }
-        };
-        fetchRewardDiscipline();
-    }, []);
+        }
+    };
 
     const formatVND = (amount) => {
         return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
     };
 
-    if (loading) return <div style={{ padding: '20px' }}>Đang nạp danh sách thưởng phạt...</div>;
+    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu thực tế...</div>;
 
     return (
         <div style={styles.container}>
             <div style={styles.header}>
-                <h2 style={styles.title}>| 9. KHEN THƯỞNG & KỶ LUẬT</h2>
-                <div style={styles.info}>Danh sách quyết định khen thưởng và xử lý vi phạm</div>
+                <div>
+                    <h2 style={styles.title}>| 9. KHEN THƯỞNG & KỶ LUẬT</h2>
+                    <div style={styles.info}>Dữ liệu bóc tách từ bảng reward_discipline trong MySQL</div>
+                </div>
+                <button style={styles.addButton} onClick={() => setIsModalOpen(true)}>+ Thêm quyết định</button>
             </div>
             
             <div style={styles.tableWrapper}>
@@ -56,13 +82,16 @@ const RewardDisciplineList = () => {
                             <th style={styles.th}>Số tiền</th>
                             <th style={styles.th}>Ngày quyết định</th>
                             <th style={styles.th}>Lý do</th>
+                            <th style={styles.th}>Thao tác</th>
                         </tr>
                     </thead>
                     <tbody>
                         {list.length > 0 ? (
-                            list.map((item, index) => (
-                                <tr key={item.id || index} style={styles.tr}>
-                                    <td style={styles.td}><b>NV-{item.employeeId || item.employee_id}</b></td>
+                            list.map((item) => (
+                                <tr key={item.id} style={styles.tr}>
+                                    <td style={styles.td}>
+                                        <b>{item.employee?.fullName || item.employeeName || `NV-${item.employeeId}`}</b>
+                                    </td>
                                     <td style={styles.td}>
                                         <span style={{
                                             ...styles.badge,
@@ -81,34 +110,86 @@ const RewardDisciplineList = () => {
                                     </td>
                                     <td style={styles.td}>{item.decisionDate || item.decision_date}</td>
                                     <td style={styles.td}><i>{item.reason}</i></td>
+                                    <td style={styles.td}>
+                                        <button style={styles.delBtn} onClick={() => handleDelete(item.id)}>Xóa</button>
+                                    </td>
                                 </tr>
                             ))
                         ) : (
-                            <tr>
-                                <td colSpan="5" style={{ textAlign: 'center', padding: '40px' }}>
-                                    <b>Chưa có dữ liệu khen thưởng, kỷ luật.</b>
-                                </td>
-                            </tr>
+                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Chưa có dữ liệu khen thưởng, kỷ luật trong MySQL.</td></tr>
                         )}
                     </tbody>
                 </table>
             </div>
+
+            {/* MODAL THÊM QUYẾT ĐỊNH */}
+            {isModalOpen && (
+                <div style={styles.overlay}>
+                    <div style={styles.modal}>
+                        <h3>THÊM QUYẾT ĐỊNH MỚI</h3>
+                        <form onSubmit={handleSubmit} style={{marginTop: '15px'}}>
+                            <div style={styles.inputGroup}>
+                                <label style={styles.label}>Nhân viên:</label>
+                                <select name="employeeId" style={styles.input} required>
+                                    <option value="">-- Chọn nhân viên --</option>
+                                    {employees.map(emp => (
+                                        <option key={emp.id} value={emp.id}>{emp.fullName}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div style={styles.inputGroup}>
+                                <label style={styles.label}>Loại quyết định:</label>
+                                <select name="type" style={styles.input}>
+                                    <option value="REWARD">Khen thưởng (+)</option>
+                                    <option value="DISCIPLINE">Kỷ luật (-)</option>
+                                </select>
+                            </div>
+                            <div style={styles.inputGroup}>
+                                <label style={styles.label}>Số tiền (VND):</label>
+                                <input name="amount" type="number" style={styles.input} required />
+                            </div>
+                            <div style={styles.inputGroup}>
+                                <label style={styles.label}>Ngày quyết định:</label>
+                                <input name="decisionDate" type="date" style={styles.input} required />
+                            </div>
+                            <div style={styles.inputGroup}>
+                                <label style={styles.label}>Lý do:</label>
+                                <textarea name="reason" style={styles.input} rows="3" required></textarea>
+                            </div>
+                            <div style={styles.btnGroup}>
+                                <button type="button" onClick={() => setIsModalOpen(false)} style={styles.btnCancel}>Hủy</button>
+                                <button type="submit" style={styles.btnSave}>Lưu quyết định</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
 
 const styles = {
     container: { padding: '40px', backgroundColor: '#f4f7f6', minHeight: '100vh' },
-    header: { marginBottom: '30px' },
+    header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' },
     title: { margin: 0, color: '#2c3e50', fontSize: '24px' },
     info: { color: '#666', marginTop: '5px' },
+    addButton: { padding: '10px 20px', backgroundColor: '#8e44ad', color: '#fff', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' },
     tableWrapper: { backgroundColor: '#fff', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' },
     table: { width: '100%', borderCollapse: 'collapse' },
     tableHeader: { backgroundColor: '#8e44ad', color: '#fff' },
-    th: { padding: '15px', textAlign: 'left', fontWeight: 'bold' },
+    th: { padding: '15px', textAlign: 'left' },
     td: { padding: '15px', borderBottom: '1px solid #eee' },
     tr: { transition: '0.3s' },
-    badge: { padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }
+    badge: { padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' },
+    delBtn: { padding: '5px 10px', backgroundColor: '#e74c3c', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' },
+    overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
+    modal: { backgroundColor: '#fff', padding: '25px', borderRadius: '10px', width: '400px', maxHeight: '90vh', overflowY: 'auto' },
+    inputGroup: { marginBottom: '12px' },
+    label: { display: 'block', fontWeight: 'bold', fontSize: '13px', marginBottom: '5px' },
+    input: { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', boxSizing: 'border-box' },
+    btnGroup: { display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' },
+    btnCancel: { padding: '10px 20px', backgroundColor: '#eee', border: 'none', borderRadius: '6px', cursor: 'pointer' },
+    btnSave: { padding: '10px 20px', backgroundColor: '#8e44ad', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }
 };
 
 export default RewardDisciplineList;
