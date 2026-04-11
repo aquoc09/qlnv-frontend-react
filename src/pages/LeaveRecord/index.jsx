@@ -1,18 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import leaveRecordApi from '../../api/leaveRecordApi';
 import employeeApi from '../../api/employeeApi';
+import leaveApi from '../../api/leaveApi';
 
 const LeaveRecordList = () => {
     const [records, setRecords] = useState([]);
     const [employees, setEmployees] = useState([]);
+    const [leaveTypes, setLeaveTypes] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    // HÀM LẤY DATA (Dùng để làm mới bảng)
+    // HÀM LẤY DATA (Dùng chung để làm mới bảng)
     const fetchData = async () => {
         try {
-            const [resRecord, resEmp] = await Promise.all([
+            const [resRecord, resEmp, resType] = await Promise.all([
                 leaveRecordApi.getAll(),
-                employeeApi.getAll()
+                employeeApi.getAll(),
+                leaveApi.getAll()
             ]);
 
             const clean = (res) => {
@@ -22,6 +25,7 @@ const LeaveRecordList = () => {
 
             setRecords(clean(resRecord));
             setEmployees(clean(resEmp));
+            setLeaveTypes(clean(resType));
         } catch (error) {
             console.error("Lỗi MySQL:", error);
         } finally {
@@ -31,18 +35,21 @@ const LeaveRecordList = () => {
 
     useEffect(() => { fetchData(); }, []);
 
-    // XỬ LÝ DUYỆT / TỪ CHỐI
+    // 1. CHỨC NĂNG DUYỆT / TỪ CHỐI (FIX TRIỆT ĐỂ)
     const handleUpdateStatus = async (id, status) => {
         try {
+            // Gửi lệnh xuống Backend
             const response = await leaveRecordApi.updateStatus(id, status);
+            
+            // Nếu BE trả về thành công (thường là code 1000)
             if (response) {
-                alert(`Hệ thống: Đã chuyển trạng thái sang ${status === 'APPROVED' ? 'ĐÃ DUYỆT' : 'TỪ CHỐI'}`);
-                
-                // QUAN TRỌNG: Phải đợi lấy dữ liệu mới xong thì giao diện mới đổi
+                alert(`Đã thực hiện: ${status === 'APPROVED' ? 'DUYỆT' : 'TỪ CHỐI'} thành công!`);
+                // QUAN TRỌNG: Gọi lại hàm lấy dữ liệu để ẩn nút ngay lập tức
                 await fetchData(); 
             }
         } catch (error) {
-            alert("Lỗi: Kiểm tra quyền Admin hoặc kết nối mạng (999)!");
+            console.error("Lỗi thực hiện:", error.response?.data);
+            alert("Lỗi: Bạn không có quyền Admin hoặc Token hết hạn (999)!");
         }
     };
 
@@ -51,15 +58,14 @@ const LeaveRecordList = () => {
         return found ? found.fullName : `NV-${r.employeeId || r.employee_id}`;
     };
 
-    // Hàm quy đổi trạng thái để hiển thị và bắt điều kiện ẩn nút
-    const getStatusInfo = (status) => {
-        const s = String(status || '').toUpperCase();
-        if (s === 'APPROVED' || s === 'ĐÃ DUYỆT') return { label: 'Đã duyệt', color: '#2ecc71', bg: '#d4edda', active: false };
-        if (s === 'REJECTED' || s === 'TỪ CHỐI') return { label: 'Từ chối', color: '#e74c3c', bg: '#f8d7da', active: false };
-        return { label: 'Chờ duyệt', color: '#f39c12', bg: '#fff3cd', active: true };
+    const getStatusStyle = (status) => {
+        const s = String(status).toUpperCase();
+        if (s === 'APPROVED' || s === 'ĐÃ DUYỆT') return { label: 'Đã duyệt', color: '#155724', bg: '#d4edda' };
+        if (s === 'REJECTED' || s === 'TỪ CHỐI') return { label: 'Từ chối', color: '#721c24', bg: '#f8d7da' };
+        return { label: 'Chờ duyệt', color: '#856404', bg: '#fff3cd' };
     };
 
-    if (loading) return <div style={{ padding: '20px' }}>Đang cập nhật trạng thái...</div>;
+    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu...</div>;
 
     return (
         <div style={styles.container}>
@@ -70,6 +76,7 @@ const LeaveRecordList = () => {
                     <thead>
                         <tr style={styles.tableHeader}>
                             <th style={styles.th}>Nhân viên</th>
+                            <th style={styles.th}>Thời gian</th>
                             <th style={styles.th}>Lý do</th>
                             <th style={styles.th}>Trạng thái</th>
                             <th style={styles.th}>Thao tác</th>
@@ -77,11 +84,14 @@ const LeaveRecordList = () => {
                     </thead>
                     <tbody>
                         {records.length > 0 ? records.map((r, index) => {
-                            const statusInfo = getStatusInfo(r.status);
+                            const statusInfo = getStatusStyle(r.status);
+                            // Kiểm tra: Chỉ hiện nút nếu trạng thái là PENDING (hoặc Chờ duyệt)
+                            const isPending = String(r.status).toUpperCase() === 'PENDING' || r.status === 'Chờ duyệt';
 
                             return (
                                 <tr key={r.id || index} style={styles.tr}>
                                     <td style={styles.td}><b>{getEmployeeName(r)}</b></td>
+                                    <td style={styles.td}>{r.startDate} ➔ {r.endDate}</td>
                                     <td style={styles.td}><i>{r.reason}</i></td>
                                     <td style={styles.td}>
                                         <span style={{...styles.badge, backgroundColor: statusInfo.bg, color: statusInfo.color}}>
@@ -89,27 +99,18 @@ const LeaveRecordList = () => {
                                         </span>
                                     </td>
                                     <td style={styles.td}>
-                                        {/* CHỈ HIỆN NÚT DUYỆT/TỪ CHỐI NẾU TRẠNG THÁI LÀ CHỜ DUYỆT */}
-                                        {statusInfo.active ? (
+                                        {isPending ? (
                                             <div style={{display: 'flex', gap: '5px'}}>
                                                 <button style={styles.btnApprove} onClick={() => handleUpdateStatus(r.id, 'APPROVED')}>Duyệt</button>
                                                 <button style={styles.btnReject} onClick={() => handleUpdateStatus(r.id, 'REJECTED')}>Từ chối</button>
                                             </div>
                                         ) : (
-                                            <span style={{color: '#7f8c8d', fontSize: '13px', fontWeight: '500'}}>✓ Hoàn tất</span>
+                                            <span style={{color: '#999', fontSize: '12px'}}>Đã xử lý xong</span>
                                         )}
-                                        
-                                        {/* Nút xóa luôn hiện để Admin dọn dẹp nếu muốn */}
-                                        <button style={styles.btnDel} onClick={async () => {
-                                            if(window.confirm("Xóa vĩnh viễn đơn này?")) {
-                                                await leaveRecordApi.delete(r.id);
-                                                fetchData();
-                                            }
-                                        }}>Xóa</button>
                                     </td>
                                 </tr>
                             );
-                        }) : <tr><td colSpan="4" style={{textAlign: 'center', padding: '40px'}}>Bảng trống.</td></tr>}
+                        }) : <tr><td colSpan="5" style={{textAlign: 'center', padding: '40px'}}>Trống.</td></tr>}
                     </tbody>
                 </table>
             </div>
@@ -127,9 +128,8 @@ const styles = {
     td: { padding: '15px', borderBottom: '1px solid #eee' },
     tr: { transition: '0.3s' },
     badge: { padding: '5px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' },
-    btnApprove: { padding: '6px 12px', backgroundColor: '#2ecc71', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' },
-    btnReject: { padding: '6px 12px', backgroundColor: '#e74c3c', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' },
-    btnDel: { padding: '6px 12px', backgroundColor: '#ecf0f1', color: '#c0392b', border: '1px solid #dcdde1', borderRadius: '4px', cursor: 'pointer', marginLeft: '10px' }
+    btnApprove: { padding: '5px 10px', backgroundColor: '#2ecc71', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' },
+    btnReject: { padding: '5px 10px', backgroundColor: '#e74c3c', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }
 };
 
 export default LeaveRecordList;
