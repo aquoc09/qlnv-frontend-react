@@ -1,22 +1,28 @@
 import React, { useEffect, useState } from 'react';
 import salaryApi from '../../api/salaryApi';
+import employeeApi from '../../api/employeeApi'; 
 
 const SalaryList = () => {
     const [salaries, setSalaries] = useState([]);
+    const [employees, setEmployees] = useState([]); // Thêm state để lấy tên nhân viên
     const [loading, setLoading] = useState(true);
 
-    // 1. LẤY DATA THẬT TỪ MYSQL
     const fetchData = async () => {
         setLoading(true);
         try {
-            const response = await salaryApi.getAll();
-            if (response && response.code === 1000) {
-                setSalaries(response.result || []);
-            } else if (Array.isArray(response)) {
-                setSalaries(response);
-            }
+            const [resSalary, resEmp] = await Promise.all([
+                salaryApi.getAll(),
+                employeeApi.getAll()
+            ]);
+
+            // FIX: Bóc tách mảng trực tiếp từ BE như ảnh Console anh chụp
+            const salaryData = resSalary?.result || (Array.isArray(resSalary) ? resSalary : []);
+            const employeeData = resEmp?.result || (Array.isArray(resEmp) ? resEmp : []);
+
+            setSalaries(salaryData);
+            setEmployees(employeeData);
         } catch (error) {
-            console.error("Lỗi kết nối bảng lương:", error);
+            console.error("Lỗi kết nối MySQL:", error);
             setSalaries([]);
         } finally {
             setLoading(false);
@@ -25,29 +31,42 @@ const SalaryList = () => {
 
     useEffect(() => { fetchData(); }, []);
 
-    // 2. CHỨC NĂNG TÍNH LƯƠNG (HÀM NÀY GỌI BE TỰ QUÉT CHẤM CÔNG ĐỂ RA TIỀN)
+    // HÀM TÌM TÊN NHÂN VIÊN: Đối chiếu ID lương với danh sách nhân viên
+    const getEmployeeName = (item) => {
+        const id = item.employeeId || item.employee_id || item.employee?.id;
+        
+        // 1. Nếu BE lồng sẵn object employee
+        if (item.employee?.fullName || item.employee?.full_name) {
+            return item.employee.fullName || item.employee.full_name;
+        }
+        // 2. Tìm trong danh sách nhân viên load từ BE
+        const found = employees.find(e => e.id === id || e.employeeId === id);
+        if (found) return found.fullName || found.full_name;
+
+        return id ? `NV - ${id}` : "---";
+    };
+
     const handleCalculate = async () => {
         const month = new Date().getMonth() + 1;
         const year = new Date().getFullYear();
-        if (window.confirm(`Anh có muốn hệ thống tự động tính lương cho tháng ${month}/${year}?`)) {
+        if (window.confirm(`Tính lương tháng ${month}/${year}?`)) {
             try {
                 await salaryApi.calculate(month, year);
-                alert("Đã tính toán xong bảng lương dựa trên ngày công thực tế!");
+                alert("Đã chốt lương thành công!");
                 fetchData();
             } catch (error) {
-                alert("Lỗi: Không thể tính lương. Có thể bảng lương tháng này đã tồn tại!");
+                alert("Lỗi: Có thể bảng lương tháng này đã tồn tại!");
             }
         }
     };
 
-    // 3. CHỨC NĂNG DUYỆT CHI (THANH TOÁN)
     const handlePay = async (id) => {
         try {
-            await salaryApi.updateStatus(id, "PAID"); // Giả sử Enum BE là PAID
-            alert("Đã xác nhận thanh toán lương!");
+            await salaryApi.updateStatus(id, "PAID");
+            alert("Thanh toán thành công!");
             fetchData();
         } catch (error) {
-            alert("Lỗi khi cập nhật trạng thái thanh toán!");
+            alert("Lỗi khi thanh toán!");
         }
     };
 
@@ -55,16 +74,12 @@ const SalaryList = () => {
         return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
     };
 
-    if (loading) return <div style={{ padding: '20px' }}>Đang kết nối cổng thanh toán...</div>;
+    if (loading) return <div style={{ padding: '20px' }}>Đang nạp bảng lương MySQL...</div>;
 
     return (
         <div style={styles.container}>
             <div style={styles.header}>
-                <div>
-                    <h2 style={styles.title}>| 8. QUẢN LÝ TIỀN LƯƠNG</h2>
-                    <p style={styles.info}>Dữ liệu thu nhập trích xuất trực tiếp từ MySQL</p>
-                </div>
-                {/* NÚT CHỨC NĂNG TÍNH LƯƠNG TỔNG THỂ */}
+                <h2 style={styles.title}>| 8. QUẢN LÝ TIỀN LƯƠNG</h2>
                 <button style={styles.calcBtn} onClick={handleCalculate}>+ Chốt lương tháng này</button>
             </div>
             
@@ -82,13 +97,13 @@ const SalaryList = () => {
                     </thead>
                     <tbody>
                         {salaries.length > 0 ? (
-                            salaries.map((s) => (
-                                <tr key={s.id} style={styles.tr}>
+                            salaries.map((s, index) => (
+                                <tr key={s.id || index} style={styles.tr}>
                                     <td style={styles.td}>
-                                        <b>{s.employee?.fullName || s.employeeName || `Mã NV: ${s.employeeId}`}</b>
+                                        <b>{getEmployeeName(s)}</b>
                                     </td>
                                     <td style={styles.td}>{s.month}/{s.year}</td>
-                                    <td style={styles.td}>{formatVND(s.baseSalary || 0)}</td>
+                                    <td style={styles.td}>{formatVND(s.baseSalary || s.base_salary || 0)}</td>
                                     <td style={{...styles.td, color: '#e67e22', fontWeight: 'bold'}}>
                                         {formatVND(s.finalSalary || s.final_salary || 0)}
                                     </td>
@@ -115,7 +130,7 @@ const SalaryList = () => {
                                 </tr>
                             ))
                         ) : (
-                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Chưa có dữ liệu bảng lương trong Database.</td></tr>
+                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Chưa có dữ liệu bảng lương trong MySQL.</td></tr>
                         )}
                     </tbody>
                 </table>
@@ -128,7 +143,6 @@ const styles = {
     container: { padding: '40px', backgroundColor: '#f4f7f6', minHeight: '100vh' },
     header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' },
     title: { margin: 0, color: '#2c3e50', fontSize: '24px' },
-    info: { color: '#666', margin: 0 },
     calcBtn: { padding: '12px 20px', backgroundColor: '#2c3e50', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' },
     tableWrapper: { backgroundColor: '#fff', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' },
     table: { width: '100%', borderCollapse: 'collapse' },
