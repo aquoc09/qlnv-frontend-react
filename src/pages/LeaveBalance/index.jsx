@@ -17,23 +17,20 @@ const LeaveBalanceList = () => {
                 employeeApi.getAll()
             ]);
 
-            // HÀM BÓC TÁCH DỮ LIỆU: Phá bỏ lớp result lồng nhau để lấy data thật
-            const deepClean = (res) => {
+            // HÀM BÓC TÁCH GỠ LỚP RESULT: Vì BE anh bọc dữ liệu rất kỹ
+            const cleanData = (res) => {
                 const raw = Array.isArray(res) ? res : (res?.result || []);
-                return raw.map(item => {
-                    // Nếu item là Object chứa result (như BE anh trả về), thì lấy cái bên trong
-                    if (item && item.result) return item.result;
-                    return item;
-                });
+                return raw.map(item => (item.result ? item.result : item));
             };
 
-            const cleanBalances = deepClean(resBalance);
-            const cleanEmployees = deepClean(resEmp);
+            const finalBalances = cleanData(resBalance);
+            const finalEmployees = cleanData(resEmp);
 
-            setBalances(cleanBalances);
-            setEmployees(cleanEmployees);
+            setBalances(finalBalances);
+            setEmployees(finalEmployees);
         } catch (error) {
             console.error("Lỗi kết nối MySQL:", error);
+            setBalances([]);
         } finally {
             setLoading(false);
         }
@@ -41,40 +38,41 @@ const LeaveBalanceList = () => {
 
     useEffect(() => { fetchData(); }, []);
 
+    // HÀM HIỂN THỊ TÊN NHÂN VIÊN (Để không bị hiện NV-undefined)
     const getEmployeeName = (b) => {
         const id = b.employeeId || b.employee_id;
         const found = employees.find(e => e.id === id);
         return found ? found.fullName : `NV-${id || '???'}`;
     };
 
-    // 2. XỬ LÝ CẬP NHẬT (FIX LỖI LƯU KHÔNG ĐỔI SỐ)
+    // 2. XỬ LÝ CẬP NHẬT (Lưu số ngày thật vào MySQL)
     const handleUpdate = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
         
-        // Gửi cả 2 định dạng (CamelCase và SnakeCase) để chắc chắn BE nhận được
+        // Gửi dữ liệu theo đúng chuẩn Java/MySQL
         const data = {
             daysUsed: Number(formData.get('daysUsed')),
-            days_used: Number(formData.get('daysUsed')),
-            daysRemaining: Number(formData.get('daysRemaining')),
-            days_remaining: Number(formData.get('daysRemaining'))
+            daysRemaining: Number(formData.get('daysRemaining'))
         };
 
         try {
-            // Lấy ID từ bản ghi đã bóc tách
+            // Phải lấy ID thật sự của bản ghi
             const id = editingBalance.id || editingBalance.leave_balance_id;
-            await leaveBalanceApi.update(id, data);
+            const response = await leaveBalanceApi.update(id, data);
             
-            alert("Đã cập nhật số ngày phép thành công!");
-            setIsModalOpen(false);
-            // Quan trọng: Phải gọi lại fetchData để bảng cập nhật số mới
-            await fetchData(); 
+            if (response) {
+                alert("Đã cập nhật quỹ phép thành công vào MySQL!");
+                setIsModalOpen(false);
+                // QUAN TRỌNG: Gọi lại fetchData để bảng hiện số mới, không hiện số 0 nữa
+                await fetchData(); 
+            }
         } catch (error) {
-            alert("Lỗi: Không thể lưu! Kiểm tra quyền Admin 999.");
+            alert("Lỗi: " + (error.response?.data?.message || "Không có quyền cập nhật (999)"));
         }
     };
 
-    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu từ MySQL...</div>;
+    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu từ hệ thống...</div>;
 
     return (
         <div style={styles.container}>
@@ -96,25 +94,25 @@ const LeaveBalanceList = () => {
                             <tr key={b.id || index} style={styles.tr}>
                                 <td style={styles.td}><b>{getEmployeeName(b)}</b></td>
                                 <td style={styles.td}>
+                                    {/* Bóc tách object leaveType lồng bên trong nếu có */}
                                     {b.leaveType?.leaveName || b.leaveName || `Mã loại: ${b.leaveId || b.leave_id}`}
                                 </td>
                                 <td style={{...styles.td, color: '#e67e22', fontWeight: 'bold'}}>
-                                    {/* FIX: Lấy đúng trường dữ liệu từ BE */}
-                                    {b.daysUsed ?? b.days_used ?? 0} ngày
+                                    {/* Sử dụng dữ liệu đã bóc tách từ result */}
+                                    {b.daysUsed ?? 0} ngày
                                 </td>
                                 <td style={{...styles.td, color: '#27ae60', fontWeight: 'bold'}}>
-                                    {b.daysRemaining ?? b.days_remaining ?? 0} ngày
+                                    {b.daysRemaining ?? 0} ngày
                                 </td>
                                 <td style={styles.td}>
                                     <button style={styles.editBtn} onClick={() => { setEditingBalance(b); setIsModalOpen(true); }}>Điều chỉnh</button>
                                 </td>
                             </tr>
-                        )) : <tr><td colSpan="5" style={{textAlign: 'center', padding: '40px'}}>Trống.</td></tr>}
+                        )) : <tr><td colSpan="5" style={{textAlign: 'center', padding: '40px'}}>Bảng trống.</td></tr>}
                     </tbody>
                 </table>
             </div>
 
-            {/* MODAL ĐIỀU CHỈNH */}
             {isModalOpen && (
                 <div style={styles.overlay}>
                     <div style={styles.modal}>
@@ -125,7 +123,7 @@ const LeaveBalanceList = () => {
                                 <input 
                                     name="daysUsed" 
                                     type="number" 
-                                    defaultValue={editingBalance?.daysUsed ?? editingBalance?.days_used} 
+                                    defaultValue={editingBalance?.daysUsed} 
                                     style={styles.input} 
                                     required 
                                 />
@@ -135,7 +133,7 @@ const LeaveBalanceList = () => {
                                 <input 
                                     name="daysRemaining" 
                                     type="number" 
-                                    defaultValue={editingBalance?.daysRemaining ?? editingBalance?.days_remaining} 
+                                    defaultValue={editingBalance?.daysRemaining} 
                                     style={styles.input} 
                                     required 
                                 />
