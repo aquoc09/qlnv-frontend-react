@@ -19,21 +19,16 @@ const LeaveRecordList = () => {
                 leaveApi.getAll()
             ]);
 
-            // FIX CỰC QUAN TRỌNG: Bóc lớp "result" của từng nhân viên (nhìn theo F12 của anh)
-            const rawEmployees = Array.isArray(resEmp) ? resEmp : (resEmp?.result || []);
-            const cleanEmployees = rawEmployees.map(item => item.result ? item.result : item);
-            
-            const rawTypes = Array.isArray(resType) ? resType : (resType?.result || []);
-            const cleanTypes = rawTypes.map(item => item.result ? item.result : item);
+            // HÀM BÓC TÁCH DỮ LIỆU CHUẨN (Phá lớp result lồng nhau)
+            const cleanData = (res) => {
+                const raw = Array.isArray(res) ? res : (res?.result || []);
+                return raw.map(item => item.result ? item.result : item);
+            };
 
-            const rawRecords = Array.isArray(resRecord) ? resRecord : (resRecord?.result || []);
-            const cleanRecords = rawRecords.map(item => item.result ? item.result : item);
+            setRecords(cleanData(resRecord));
+            setEmployees(cleanData(resEmp));
+            setLeaveTypes(cleanData(resType));
 
-            setEmployees(cleanEmployees);
-            setLeaveTypes(cleanTypes);
-            setRecords(cleanRecords);
-
-            console.log("Nhân viên sạch:", cleanEmployees);
         } catch (error) {
             console.error("Lỗi MySQL:", error);
         } finally {
@@ -43,54 +38,42 @@ const LeaveRecordList = () => {
 
     useEffect(() => { fetchData(); }, []);
 
-    // HÀM HIỂN THỊ TÊN (Dùng mảng đã làm sạch)
-    const getEmployeeName = (item) => {
-        const id = item.employeeId || item.employee_id;
-        const found = employees.find(e => e.id === id);
-        return found ? found.fullName : `NV-${id || '???'}`;
+    // HÀM TÌM TÊN NHÂN VIÊN & LOẠI NGHỈ
+    const getEmployeeName = (r) => {
+        const found = employees.find(e => e.id === (r.employeeId || r.employee_id));
+        return found ? found.fullName : `NV-${r.employeeId || r.employee_id}`;
+    };
+    const getLeaveName = (r) => {
+        const found = leaveTypes.find(t => t.id === (r.leaveId || r.leave_id));
+        return found ? found.leaveName : `Loại-${r.leaveId || r.leave_id}`;
     };
 
-    const getLeaveName = (item) => {
-        const id = item.leaveId || item.leave_id;
-        const found = leaveTypes.find(t => t.id === id);
-        return found ? found.leaveName : `Loại-${id}`;
-    };
-
+    // 2. XỬ LÝ DUYỆT / TỪ CHỐI (Quan trọng: Sau khi xong phải load lại data)
     const handleUpdateStatus = async (id, status) => {
         try {
-            await leaveRecordApi.updateStatus(id, status);
-            alert("Cập nhật thành công!");
-            fetchData();
-        } catch (error) { alert("Lỗi quyền hạn 999!"); }
-    };
-
-    const handleDelete = async (id) => {
-        if (window.confirm("Anh muốn xóa đơn này?")) {
-            try {
-                await leaveRecordApi.delete(id);
-                alert("Đã xóa đơn!");
-                fetchData();
-            } catch (error) { alert("Lỗi khi xóa!"); }
+            const response = await leaveRecordApi.updateStatus(id, status);
+            console.log("Kết quả duyệt:", response);
+            alert(`Đã thực hiện: ${status === 'APPROVED' ? 'DUYỆT' : 'TỪ CHỐI'}`);
+            // GỌI LẠI HÀM FETCH ĐỂ CẬP NHẬT GIAO DIỆN VÀ ẨN NÚT
+            await fetchData(); 
+        } catch (error) {
+            alert("Lỗi: Không có quyền (999) hoặc sai API!");
         }
     };
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        const formData = new FormData(e.target);
-        const data = {
-            employeeId: Number(formData.get('employeeId')),
-            leaveId: Number(formData.get('leaveId')),
-            startDate: formData.get('startDate'),
-            endDate: formData.get('endDate'),
-            reason: formData.get('reason'),
-            status: "PENDING"
-        };
-        try {
-            await leaveRecordApi.create(data);
-            alert("Tạo đơn thành công!");
-            setIsModalOpen(false);
-            fetchData();
-        } catch (error) { alert("Lỗi tạo đơn!"); }
+    const handleDelete = async (id) => {
+        if (window.confirm("Xóa đơn này?")) {
+            try { await leaveRecordApi.delete(id); fetchData(); } 
+            catch (error) { alert("Lỗi xóa!"); }
+        }
+    };
+
+    // Style trạng thái linh hoạt
+    const getStatusInfo = (status) => {
+        const s = String(status).toUpperCase();
+        if (s === 'APPROVED' || s === 'ĐÃ DUYỆT') return { label: 'Đã duyệt', color: '#2ecc71', bg: '#d4edda' };
+        if (s === 'REJECTED' || s === 'TỪ CHỐI') return { label: 'Từ chối', color: '#e74c3c', bg: '#f8d7da' };
+        return { label: 'Chờ duyệt', color: '#f39c12', bg: '#fff3cd' };
     };
 
     if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu...</div>;
@@ -115,66 +98,37 @@ const LeaveRecordList = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {records.length > 0 ? records.map((r) => (
-                            <tr key={r.id} style={styles.tr}>
-                                <td style={styles.td}><b>{getEmployeeName(r)}</b></td>
-                                <td style={styles.td}>{getLeaveName(r)}</td>
-                                <td style={styles.td}>{r.startDate} ➔ {r.endDate}</td>
-                                <td style={styles.td}><i>{r.reason}</i></td>
-                                <td style={styles.td}>
-                                    <span style={{...styles.badge, backgroundColor: r.status === 'APPROVED' ? '#d4edda' : '#fff3cd'}}>
-                                        {r.status === 'APPROVED' ? 'Đã duyệt' : 'Chờ duyệt'}
-                                    </span>
-                                </td>
-                                <td style={styles.td}>
-                                    {r.status === 'PENDING' && (
-                                        <>
-                                            <button style={styles.btnApprove} onClick={() => handleUpdateStatus(r.id, 'APPROVED')}>Duyệt</button>
-                                            <button style={styles.btnReject} onClick={() => handleUpdateStatus(r.id, 'REJECTED')}>Từ chối</button>
-                                        </>
-                                    )}
-                                    <button style={styles.btnDel} onClick={() => handleDelete(r.id)}>Xóa</button>
-                                </td>
-                            </tr>
-                        )) : <tr><td colSpan="6" style={{textAlign: 'center', padding: '40px'}}>Trống. Hãy nhấn tạo đơn mới!</td></tr>}
+                        {records.length > 0 ? records.map((r, index) => {
+                            const statusInfo = getStatusInfo(r.status);
+                            const canAction = (String(r.status).toUpperCase() === 'PENDING' || r.status === 'Chờ duyệt');
+
+                            return (
+                                <tr key={r.id || index} style={styles.tr}>
+                                    <td style={styles.td}><b>{getEmployeeName(r)}</b></td>
+                                    <td style={styles.td}>{getLeaveName(r)}</td>
+                                    <td style={styles.td}>{r.startDate || r.start_date} ➔ {r.endDate || r.end_date}</td>
+                                    <td style={styles.td}><i>{r.reason}</i></td>
+                                    <td style={styles.td}>
+                                        <span style={{...styles.badge, backgroundColor: statusInfo.bg, color: statusInfo.color}}>
+                                            {statusInfo.label}
+                                        </span>
+                                    </td>
+                                    <td style={styles.td}>
+                                        {/* NẾU LÀ CHỜ DUYỆT THÌ HIỆN NÚT, NẾU KHÁC THÌ ẨN */}
+                                        {canAction && (
+                                            <div style={{display: 'inline-flex', gap: '5px'}}>
+                                                <button style={styles.btnApprove} onClick={() => handleUpdateStatus(r.id, 'APPROVED')}>Duyệt</button>
+                                                <button style={styles.btnReject} onClick={() => handleUpdateStatus(r.id, 'REJECTED')}>Từ chối</button>
+                                            </div>
+                                        )}
+                                        <button style={styles.btnDel} onClick={() => handleDelete(r.id)}>Xóa</button>
+                                    </td>
+                                </tr>
+                            );
+                        }) : <tr><td colSpan="6" style={{textAlign: 'center', padding: '40px'}}>Trống.</td></tr>}
                     </tbody>
                 </table>
             </div>
-
-            {isModalOpen && (
-                <div style={styles.overlay}>
-                    <div style={styles.modal}>
-                        <h3>TẠO ĐƠN MỚI</h3>
-                        <form onSubmit={handleSubmit}>
-                            <div style={styles.inputGroup}>
-                                <label>Nhân viên:</label>
-                                <select name="employeeId" style={styles.input} required>
-                                    <option value="">-- Chọn nhân viên --</option>
-                                    {employees.map(emp => (
-                                        <option key={emp.id} value={emp.id}>{emp.fullName}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div style={styles.inputGroup}>
-                                <label>Loại nghỉ:</label>
-                                <select name="leaveId" style={styles.input} required>
-                                    <option value="">-- Chọn loại --</option>
-                                    {leaveTypes.map(t => (
-                                        <option key={t.id} value={t.id}>{t.leaveName}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div style={styles.inputGroup}><label>Từ:</label><input name="startDate" type="date" style={styles.input} required /></div>
-                            <div style={styles.inputGroup}><label>Đến:</label><input name="endDate" type="date" style={styles.input} required /></div>
-                            <div style={styles.inputGroup}><label>Lý do:</label><textarea name="reason" style={styles.input} required></textarea></div>
-                            <div style={styles.btnGroup}>
-                                <button type="button" onClick={() => setIsModalOpen(false)} style={styles.btnCancel}>Hủy</button>
-                                <button type="submit" style={styles.btnSave}>Lưu MySQL</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };
@@ -191,16 +145,9 @@ const styles = {
     td: { padding: '15px', borderBottom: '1px solid #eee' },
     tr: { transition: '0.3s' },
     badge: { padding: '5px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' },
-    btnApprove: { padding: '5px 10px', backgroundColor: '#2ecc71', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: '5px' },
-    btnReject: { padding: '5px 10px', backgroundColor: '#e74c3c', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: '5px' },
-    btnDel: { padding: '5px 10px', backgroundColor: '#eee', border: 'none', borderRadius: '4px', cursor: 'pointer' },
-    overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
-    modal: { backgroundColor: '#fff', padding: '25px', borderRadius: '12px', width: '400px' },
-    inputGroup: { marginBottom: '12px' },
-    input: { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px' },
-    btnGroup: { display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' },
-    btnCancel: { padding: '10px 20px', backgroundColor: '#eee', borderRadius: '6px', cursor: 'pointer', border: 'none' },
-    btnSave: { padding: '10px 20px', backgroundColor: '#3498db', color: '#fff', borderRadius: '6px', cursor: 'pointer', border: 'none' }
+    btnApprove: { padding: '5px 10px', backgroundColor: '#2ecc71', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' },
+    btnReject: { padding: '5px 10px', backgroundColor: '#e74c3c', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' },
+    btnDel: { padding: '5px 10px', backgroundColor: '#eee', color: '#333', border: 'none', borderRadius: '4px', cursor: 'pointer', marginLeft: '5px' }
 };
 
 export default LeaveRecordList;
