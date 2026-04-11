@@ -5,20 +5,27 @@ const UserList = () => {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // 1. LẤY DỮ LIỆU VÀ BÓC TRẦN (Gỡ lớp result lồng nhau)
     const fetchUsers = async () => {
         setLoading(true);
         try {
             const response = await userApi.getAll();
-            
-            // HÀM BÓC TÁCH: Nếu item có .result thì lấy .result (đây là ruột chứa tên, ngày sinh)
-            const rawData = Array.isArray(response) ? response : (response?.result || []);
-            const cleanUsers = rawData.map(item => (item.result ? item.result : item));
+            console.log("Dữ liệu thô từ BE:", response);
+
+            // BÓC TÁCH MẠNH: Chấp nhận mọi kiểu trả về từ Java (Mảng trực tiếp hoặc .result)
+            let rawData = [];
+            if (Array.isArray(response)) {
+                rawData = response;
+            } else if (response?.result && Array.isArray(response.result)) {
+                rawData = response.result;
+            } else if (response?.result) {
+                rawData = [response.result];
+            }
+
+            // PHÁ VỎ TỪNG USER: Nếu user bị bọc trong .result thì lột ra
+            const cleanUsers = rawData.map(u => (u.result ? u.result : u));
             
             setUsers(cleanUsers);
-            console.log("Dữ liệu tài khoản đã bóc trần:", cleanUsers);
         } catch (error) {
             console.error("Lỗi lấy danh sách tài khoản:", error);
         } finally {
@@ -28,35 +35,28 @@ const UserList = () => {
 
     useEffect(() => { fetchUsers(); }, []);
 
-    // 2. HÀM THÊM TÀI KHOẢN (Gửi dữ liệu chuẩn BE Java)
-    const handleAddUser = async (e) => {
-        e.preventDefault();
-        setIsSubmitting(true);
-        const formData = new FormData(e.target);
-        const f = Object.fromEntries(formData.entries());
-        
-        const dataSubmit = {
-            username: f.username,
-            password: f.password,
-            firstName: f.firstName,
-            lastName: f.lastName,
-            dob: f.dob,
-            roles: [f.role] 
-        };
-
-        try {
-            await userApi.create(dataSubmit);
-            alert("Đã tạo tài khoản thành công vào MySQL!");
-            setIsModalOpen(false);
-            await fetchUsers(); // Load lại để hiện người mới
-        } catch (error) {
-            alert("Lỗi: " + (error.response?.data?.message || "Kiểm tra lại Username!"));
-        } finally {
-            setIsSubmitting(false);
-        }
+    // HÀM HIỂN THỊ DỮ LIỆU (Dò tìm mọi tên biến có thể có trong MySQL/Java)
+    const renderFullName = (u) => {
+        const fName = u.firstName || u.first_name || u.firstname || "";
+        const lName = u.lastName || u.last_name || u.lastname || "";
+        const fullName = `${fName} ${lName}`.trim();
+        return fullName || "Chưa đặt tên";
     };
 
-    if (loading) return <div style={{ padding: '20px' }}>Đang bóc tách dữ liệu người dùng...</div>;
+    const renderDob = (u) => {
+        return u.dob || u.dateOfBirth || u.birthday || u.birth_date || "---";
+    };
+
+    const renderRoles = (u) => {
+        if (!u.roles || !Array.isArray(u.roles)) return <span style={styles.roleBadge}>USER</span>;
+        return u.roles.map((r, i) => (
+            <span key={i} style={styles.roleBadge}>
+                {typeof r === 'object' ? (r.name || r.roleName || r.role_name) : r}
+            </span>
+        ));
+    };
+
+    if (loading) return <div style={{ padding: '20px' }}>Đang bóc tách dữ liệu từ MySQL online...</div>;
 
     return (
         <div style={styles.container}>
@@ -69,7 +69,7 @@ const UserList = () => {
                 <table style={styles.table}>
                     <thead>
                         <tr style={styles.tableHeader}>
-                            <th style={styles.th}>Username</th>
+                            <th style={styles.th}>Username (Email)</th>
                             <th style={styles.th}>Họ và Tên</th>
                             <th style={styles.th}>Ngày sinh</th>
                             <th style={styles.th}>Quyền hạn</th>
@@ -80,65 +80,19 @@ const UserList = () => {
                             users.map((u, index) => (
                                 <tr key={u.id || index} style={styles.tr}>
                                     <td style={styles.td}><b>{u.username}</b></td>
-                                    {/* BÓC TRẦN TÊN: Dò tìm mọi trường BE có thể trả về */}
-                                    <td style={styles.td}>
-                                        {(u.firstName || u.first_name || '') + ' ' + (u.lastName || u.last_name || '')}
-                                    </td>
-                                    {/* BÓC TRẦN NGÀY SINH */}
-                                    <td style={styles.td}>{u.dob || u.dateOfBirth || "---"}</td>
-                                    <td style={styles.td}>
-                                        {u.roles?.map((r, i) => (
-                                            <span key={i} style={styles.roleBadge}>
-                                                {typeof r === 'object' ? (r.name || r.roleName) : r}
-                                            </span>
-                                        ))}
-                                    </td>
+                                    {/* HIỆN HỌ TÊN - BÓC TRẦN BIẾN */}
+                                    <td style={styles.td}>{renderFullName(u)}</td>
+                                    {/* HIỆN NGÀY SINH - BÓC TRẦN BIẾN */}
+                                    <td style={styles.td}>{renderDob(u)}</td>
+                                    <td style={styles.td}>{renderRoles(u)}</td>
                                 </tr>
                             ))
                         ) : (
-                            <tr><td colSpan="4" style={{ textAlign: 'center', padding: '40px' }}>MySQL chưa có tài khoản nào.</td></tr>
+                            <tr><td colSpan="4" style={{ textAlign: 'center', padding: '40px' }}>Không có dữ liệu tài khoản.</td></tr>
                         )}
                     </tbody>
                 </table>
             </div>
-
-            {isModalOpen && (
-                <div style={styles.overlay}>
-                    <div style={styles.modal}>
-                        <h3 style={{marginTop: 0}}>THÊM TÀI KHOẢN MỚI</h3>
-                        <form onSubmit={handleAddUser}>
-                            <input name="username" placeholder="Tên đăng nhập (Email)" required style={styles.input}/>
-                            <input name="password" type="password" placeholder="Mật khẩu" required style={styles.input}/>
-                            
-                            <div style={{display: 'flex', gap: '10px', marginTop: '10px'}}>
-                                <input name="firstName" placeholder="Họ và tên đệm" required style={styles.input}/>
-                                <input name="lastName" placeholder="Tên" required style={styles.input}/>
-                            </div>
-
-                            <div style={styles.inputGroup}>
-                                <label style={styles.label}>Ngày sinh:</label>
-                                <input name="dob" type="date" required style={styles.input}/>
-                            </div>
-
-                            <div style={styles.inputGroup}>
-                                <label style={styles.label}>Quyền hạn:</label>
-                                <select name="role" style={styles.input} required>
-                                    <option value="ADMIN">QUẢN TRỊ VIÊN (ADMIN)</option>
-                                    <option value="HR">NHÂN SỰ (HR)</option>
-                                    <option value="USER">NHÂN VIÊN (USER)</option>
-                                </select>
-                            </div>
-                            
-                            <div style={styles.btnGroup}>
-                                <button type="button" onClick={() => setIsModalOpen(false)} style={styles.btnCancel}>Hủy</button>
-                                <button type="submit" disabled={isSubmitting} style={styles.btnSave}>
-                                    {isSubmitting ? "Đang lưu..." : "Lưu MySQL"}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };
@@ -154,15 +108,7 @@ const styles = {
     th: { padding: '15px', textAlign: 'left' },
     td: { padding: '15px', borderBottom: '1px solid #eee' },
     tr: { transition: '0.3s' },
-    roleBadge: { padding: '3px 8px', backgroundColor: '#e1f5fe', color: '#01579b', borderRadius: '4px', fontSize: '11px', marginRight: '5px', fontWeight: 'bold' },
-    overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
-    modal: { backgroundColor: '#fff', padding: '25px', borderRadius: '12px', width: '450px' },
-    inputGroup: { marginTop: '15px' },
-    label: { display: 'block', fontWeight: 'bold', fontSize: '12px', marginBottom: '5px' },
-    input: { width: '100%', padding: '10px', marginTop: '5px', border: '1px solid #ddd', borderRadius: '6px', boxSizing: 'border-box' },
-    btnGroup: { display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' },
-    btnCancel: { padding: '10px 20px', backgroundColor: '#eee', border: 'none', borderRadius: '6px', cursor: 'pointer' },
-    btnSave: { padding: '10px 20px', backgroundColor: '#2980b9', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }
+    roleBadge: { padding: '3px 8px', backgroundColor: '#e1f5fe', color: '#01579b', borderRadius: '4px', fontSize: '11px', marginRight: '5px', fontWeight: 'bold' }
 };
 
 export default UserList;
