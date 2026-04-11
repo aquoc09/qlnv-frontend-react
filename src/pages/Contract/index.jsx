@@ -9,7 +9,7 @@ const ContractList = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentContract, setCurrentContract] = useState(null);
 
-    // 1. LẤY DỮ LIỆU TỪ BE (Hợp đồng & Nhân viên)
+    // 1. LẤY DỮ LIỆU TỪ BE (Bóc trần 100%)
     const fetchData = async () => {
         setLoading(true);
         try {
@@ -18,22 +18,15 @@ const ContractList = () => {
                 employeeApi.getAll()
             ]);
 
-            // Bóc tách Hợp đồng
-            if (contractRes && contractRes.code === 1000) {
-                setContracts(contractRes.result || []);
-            } else if (Array.isArray(contractRes)) {
-                setContracts(contractRes.map(item => item.result || item).filter(Boolean));
-            }
+            const cleanData = (res) => {
+                const raw = Array.isArray(res) ? res : (res?.result || []);
+                return raw.map(item => (item.result ? item.result : item));
+            };
 
-            // Bóc tách Nhân viên để đổ vào ô Select
-            if (employeeRes && employeeRes.code === 1000) {
-                setEmployees(employeeRes.result || []);
-            } else if (Array.isArray(employeeRes)) {
-                const empData = employeeRes.map(item => item.result || item).filter(Boolean);
-                setEmployees(empData);
-            }
+            setContracts(cleanData(contractRes));
+            setEmployees(cleanData(employeeRes));
         } catch (error) {
-            console.error("Lỗi tải dữ liệu:", error);
+            console.error("Lỗi MySQL:", error);
         } finally {
             setLoading(false);
         }
@@ -41,46 +34,53 @@ const ContractList = () => {
 
     useEffect(() => { fetchData(); }, []);
 
-    // 2. XỬ LÝ XÓA
-    const handleDelete = async (id) => {
-        if (window.confirm(`Anh có chắc muốn xóa hợp đồng số ${id}?`)) {
-            try {
-                await contractApi.delete(id);
-                alert("Xóa hợp đồng thành công!");
-                fetchData();
-            } catch (error) {
-                alert("Lỗi: Không thể xóa hợp đồng này!");
-            }
-        }
-    };
-
-    // 3. XỬ LÝ LƯU (THÊM/SỬA)
+    // 2. XỬ LÝ LƯU (BÓC TRẦN DỮ LIỆU THÊM MỚI)
     const handleSubmit = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
-        const data = Object.fromEntries(formData.entries());
+        const rawData = Object.fromEntries(formData.entries());
+
+        const dataToSend = {
+            ...rawData,
+            employeeId: Number(rawData.employeeId),
+            baseSalary: Number(rawData.baseSalary)
+        };
 
         try {
             if (currentContract) {
-                const id = currentContract.id || currentContract.contractId || currentContract.contract_id;
-                await contractApi.update(id, data);
+                const id = currentContract.id || currentContract.contractId;
+                await contractApi.update(id, dataToSend);
                 alert("Cập nhật hợp đồng thành công!");
             } else {
-                await contractApi.create(data);
-                alert("Ký hợp đồng mới thành công!");
+                // KHI THÊM MỚI: Bắt BE bóc trần dữ liệu trả về
+                const response = await contractApi.create(dataToSend);
+                console.log("Dữ liệu BE trả về khi thêm:", response);
+                alert("Đã ký hợp đồng mới thành công vào MySQL!");
             }
             setIsModalOpen(false);
-            fetchData();
+            // GỌI LẠI FETCH ĐỂ CẬP NHẬT BẢNG NGAY LẬP TỨC
+            await fetchData(); 
         } catch (error) {
-            alert("Lỗi khi lưu: Anh kiểm tra lại xem nhân viên này đã có hợp đồng chưa nhé!");
+            alert("Lỗi: Có thể nhân viên này đã có hợp đồng rồi!");
+        }
+    };
+
+    const handleDelete = async (id) => {
+        if (window.confirm(`Xóa hợp đồng số ${id}?`)) {
+            try {
+                await contractApi.delete(id);
+                fetchData();
+            } catch (error) {
+                alert("Lỗi xóa: Kiểm tra quyền Admin 999");
+            }
         }
     };
 
     const formatVND = (amount) => {
-        return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+        return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
     };
 
-    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu từ hệ thống...</div>;
+    if (loading) return <div style={{ padding: '20px' }}>Đang nạp hợp đồng từ MySQL...</div>;
 
     return (
         <div style={styles.container}>
@@ -108,17 +108,17 @@ const ContractList = () => {
                     </thead>
                     <tbody>
                         {contracts.length > 0 ? (
-                            contracts.map((c) => {
+                            contracts.map((c, index) => {
                                 const cId = c.id || c.contract_id || c.contractId;
                                 return (
-                                    <tr key={cId} style={styles.tr}>
+                                    <tr key={cId || index} style={styles.tr}>
                                         <td style={styles.td}><b>HĐ-{cId}</b></td>
                                         <td style={styles.td}>
-                                            {c.employee?.fullName || c.employee?.full_name || `Mã NV: ${c.employee_id || c.employeeId}`}
+                                            {c.employee?.fullName || c.employee?.full_name || `Mã NV: ${c.employeeId || c.employee_id}`}
                                         </td>
-                                        <td style={styles.td}>{c.type}</td>
+                                        <td style={styles.td}>{c.type || c.contractType}</td>
                                         <td style={{...styles.td, color: '#e67e22', fontWeight: 'bold'}}>
-                                            {formatVND(c.baseSalary || c.base_salary || 0)}
+                                            {formatVND(c.baseSalary || c.base_salary)}
                                         </td>
                                         <td style={styles.td}>
                                             <span style={{
@@ -137,30 +137,29 @@ const ContractList = () => {
                                 );
                             })
                         ) : (
-                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Chưa có dữ liệu hợp đồng trong MySQL.</td></tr>
+                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Chưa có hợp đồng nào.</td></tr>
                         )}
                     </tbody>
                 </table>
             </div>
 
-            {/* MODAL THÊM/SỬA */}
             {isModalOpen && (
                 <div style={styles.overlay}>
                     <div style={styles.modal}>
                         <h3>{currentContract ? "CẬP NHẬT HỢP ĐỒNG" : "KÝ HỢP ĐỒNG MỚI"}</h3>
                         <form onSubmit={handleSubmit}>
                             <div style={styles.inputGroup}>
-                                <label style={styles.label}>Chọn nhân viên:</label>
+                                <label style={styles.label}>Nhân viên:</label>
                                 <select 
                                     name="employeeId" 
-                                    defaultValue={currentContract?.employee?.employee_id || currentContract?.employeeId} 
+                                    defaultValue={currentContract?.employeeId || currentContract?.employee_id} 
                                     style={styles.input} 
                                     required
                                 >
-                                    <option value="">-- Click để chọn nhân viên --</option>
+                                    <option value="">-- Chọn nhân viên --</option>
                                     {employees.map(emp => (
-                                        <option key={emp.employee_id || emp.id} value={emp.employee_id || emp.id}>
-                                            {emp.full_name || emp.fullName} (ID: {emp.employee_id || emp.id})
+                                        <option key={emp.id} value={emp.id}>
+                                            {emp.fullName} (ID: {emp.id})
                                         </option>
                                     ))}
                                 </select>
@@ -175,7 +174,7 @@ const ContractList = () => {
                             </div>
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Lương cơ bản:</label>
-                                <input name="baseSalary" type="number" defaultValue={currentContract?.baseSalary || currentContract?.base_salary} style={styles.input} required/>
+                                <input name="baseSalary" type="number" defaultValue={currentContract?.baseSalary} style={styles.input} required/>
                             </div>
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Trạng thái:</label>
@@ -186,7 +185,7 @@ const ContractList = () => {
                             </div>
                             <div style={styles.btnGroup}>
                                 <button type="button" onClick={() => setIsModalOpen(false)} style={styles.btnCancel}>Hủy</button>
-                                <button type="submit" style={styles.btnSave}>Lưu vào MySQL</button>
+                                <button type="submit" style={styles.btnSave}>Lưu MySQL</button>
                             </div>
                         </form>
                     </div>
