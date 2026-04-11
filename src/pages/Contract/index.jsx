@@ -9,8 +9,8 @@ const ContractList = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentContract, setCurrentContract] = useState(null);
 
-    // HÀM BÓC TÁCH DỮ LIỆU TỪ LỚP VỎ result (Nhìn F12 của anh để lột vỏ)
-    const cleanData = (res) => {
+    // HÀM BÓC TRẦN DỮ LIỆU (Lột sạch lớp result lồng nhau)
+    const deepClean = (res) => {
         const raw = Array.isArray(res) ? res : (res?.result || []);
         return raw.map(item => (item.result ? item.result : item));
     };
@@ -23,10 +23,15 @@ const ContractList = () => {
                 employeeApi.getAll()
             ]);
 
-            setContracts(cleanData(contractRes));
-            setEmployees(cleanData(employeeRes));
+            const cleanContracts = deepClean(contractRes);
+            const cleanEmployees = deepClean(employeeRes);
+
+            setContracts(cleanContracts);
+            setEmployees(cleanEmployees);
+            
+            console.log("Hợp đồng sạch:", cleanContracts);
         } catch (error) {
-            console.error("Lỗi kết nối MySQL:", error);
+            console.error("Lỗi MySQL:", error);
         } finally {
             setLoading(false);
         }
@@ -34,51 +39,48 @@ const ContractList = () => {
 
     useEffect(() => { fetchData(); }, []);
 
-    // XỬ LÝ KHI NHẤN NÚT SỬA (Quan trọng: Phải lấy đúng ruột dữ liệu)
-    const handleEdit = (contract) => {
-        // Đảm bảo dữ liệu đưa vào Modal là dữ liệu đã bóc tách
-        setCurrentContract(contract);
-        setIsModalOpen(true);
-    };
-
+    // XỬ LÝ LƯU (THÊM & SỬA - BÓC TRẦN MẠNH)
     const handleSubmit = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
         const rawData = Object.fromEntries(formData.entries());
 
-        // CHUẨN HÓA DỮ LIỆU GỬI XUỐNG BE JAVA
+        // CHUẨN HÓA DỮ LIỆU GỬI XUỐNG BE JAVA (Ép kiểu số cho ID và Lương)
         const dataToSend = {
-            ...rawData,
             employeeId: Number(rawData.employeeId),
+            contractType: rawData.contractType,
             baseSalary: Number(rawData.baseSalary),
-            status: rawData.status
+            status: rawData.status || "ACTIVE"
         };
 
         try {
             if (currentContract) {
-                // Lấy ID thật sự sau khi đã bóc vỏ result
+                // LẤY ID THẬT ĐÃ BÓC VỎ
                 const id = currentContract.id || currentContract.contractId || currentContract.contract_id;
                 await contractApi.update(id, dataToSend);
-                alert("Đã cập nhật hợp đồng vào MySQL!");
+                alert("Đã cập nhật hợp đồng thành công!");
             } else {
-                await contractApi.create(dataToSend);
-                alert("Đã ký hợp đồng mới thành công!");
+                // THÊM MỚI (Bóc trần kết quả trả về)
+                const res = await contractApi.create(dataToSend);
+                console.log("BE trả về khi thêm mới:", res);
+                alert("Đã ký hợp đồng mới vào MySQL thành công!");
             }
             setIsModalOpen(false);
-            await fetchData(); // Ép bảng cập nhật ngay lập tức
+            // GỌI LẠI FETCH ĐỂ BẢNG TỰ CẬP NHẬT DÒNG MỚI
+            await fetchData(); 
         } catch (error) {
-            console.error("Lỗi BE trả về:", error.response?.data);
-            alert("Lỗi: " + (error.response?.data?.message || "999 - Không có quyền hoặc sai dữ liệu!"));
+            console.error("Lỗi BE:", error.response?.data);
+            alert("Lỗi: " + (error.response?.data?.message || "Nhân viên này đã có hợp đồng hoặc sai quyền 999!"));
         }
     };
 
     const handleDelete = async (id) => {
-        if (!window.confirm("Anh có chắc muốn hủy hợp đồng này?")) return;
+        if (!window.confirm("Hủy hợp đồng này vĩnh viễn?")) return;
         try {
             await contractApi.delete(id);
-            fetchData();
+            await fetchData();
         } catch (error) {
-            alert("Lỗi xóa: " + (error.response?.data?.message || "999"));
+            alert("Lỗi xóa: 999");
         }
     };
 
@@ -86,7 +88,7 @@ const ContractList = () => {
         return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
     };
 
-    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu hợp đồng...</div>;
+    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu từ MySQL...</div>;
 
     return (
         <div style={styles.container}>
@@ -115,14 +117,14 @@ const ContractList = () => {
                     <tbody>
                         {contracts.length > 0 ? (
                             contracts.map((c, index) => {
-                                const cId = c.id || c.contract_id || c.contractId;
+                                const cId = c.id || c.contractId || c.contract_id;
                                 return (
                                     <tr key={cId || index} style={styles.tr}>
                                         <td style={styles.td}><b>HĐ-{cId}</b></td>
                                         <td style={styles.td}>
                                             <b>{c.employee?.fullName || c.employee?.full_name || `Mã NV: ${c.employeeId || c.employee_id}`}</b>
                                         </td>
-                                        <td style={styles.td}>{c.type || c.contractType || 'FULL_TIME'}</td>
+                                        <td style={styles.td}>{c.contractType || c.type}</td>
                                         <td style={{...styles.td, color: '#e67e22', fontWeight: 'bold'}}>
                                             {formatVND(c.baseSalary || c.base_salary)}
                                         </td>
@@ -136,14 +138,14 @@ const ContractList = () => {
                                             </span>
                                         </td>
                                         <td style={styles.td}>
-                                            <button style={styles.editBtn} onClick={() => handleEdit(c)}>Sửa</button>
+                                            <button style={styles.editBtn} onClick={() => { setCurrentContract(c); setIsModalOpen(true); }}>Sửa</button>
                                             <button style={styles.deleteBtn} onClick={() => handleDelete(cId)}>Xóa</button>
                                         </td>
                                     </tr>
                                 );
                             })
                         ) : (
-                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Bảng trống. Hãy ký hợp đồng mới!</td></tr>
+                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Chưa có hợp đồng nào trong MySQL.</td></tr>
                         )}
                     </tbody>
                 </table>
@@ -152,7 +154,7 @@ const ContractList = () => {
             {isModalOpen && (
                 <div style={styles.overlay}>
                     <div style={styles.modal}>
-                        <h3>{currentContract ? "CẬP NHẬT HỢP ĐỒNG" : "KÝ HỢP ĐỒNG MỚI"}</h3>
+                        <h3 style={{marginTop: 0}}>{currentContract ? "CẬP NHẬT HỢP ĐỒNG" : "KÝ HỢP ĐỒNG MỚI"}</h3>
                         <form onSubmit={handleSubmit}>
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Nhân viên:</label>
@@ -160,7 +162,7 @@ const ContractList = () => {
                                     name="employeeId" 
                                     defaultValue={currentContract?.employeeId || currentContract?.employee_id} 
                                     style={styles.input} 
-                                    disabled={!!currentContract} // Không cho đổi nhân viên khi sửa
+                                    disabled={!!currentContract} 
                                     required
                                 >
                                     <option value="">-- Chọn nhân viên --</option>
@@ -173,10 +175,10 @@ const ContractList = () => {
                             </div>
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Loại hợp đồng:</label>
-                                <select name="type" defaultValue={currentContract?.type || "FULL_TIME"} style={styles.input}>
+                                <select name="contractType" defaultValue={currentContract?.contractType || currentContract?.type || "FULL_TIME"} style={styles.input}>
                                     <option value="FULL_TIME">Chính thức</option>
-                                    <option value="PART_TIME">Bán thời gian</option>
                                     <option value="TRIAL">Thử việc</option>
+                                    <option value="PART_TIME">Bán thời gian</option>
                                 </select>
                             </div>
                             <div style={styles.inputGroup}>
@@ -188,12 +190,11 @@ const ContractList = () => {
                                 <select name="status" defaultValue={currentContract?.status || "ACTIVE"} style={styles.input}>
                                     <option value="ACTIVE">Đang hiệu lực</option>
                                     <option value="EXPIRED">Đã hết hạn</option>
-                                    <option value="ENDED">Đã chấm dứt</option>
                                 </select>
                             </div>
                             <div style={styles.btnGroup}>
                                 <button type="button" onClick={() => setIsModalOpen(false)} style={styles.btnCancel}>Hủy</button>
-                                <button type="submit" style={styles.btnSave}>Lưu MySQL</button>
+                                <button type="submit" style={styles.btnSave}>Lưu vào MySQL</button>
                             </div>
                         </form>
                     </div>
