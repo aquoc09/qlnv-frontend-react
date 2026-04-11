@@ -16,16 +16,19 @@ const RewardDisciplineList = () => {
                 employeeApi.getAll()
             ]);
 
-            // FIX: BE trả về Array trực tiếp (như trong ảnh Console anh chụp)
-            const rewardData = resData?.result || (Array.isArray(resData) ? resData : []);
-            const employeeData = resEmp?.result || (Array.isArray(resEmp) ? resEmp : []);
+            // HÀM BÓC TÁCH GỠ LỚP RESULT LỒNG NHAU (Nhìn F12 của anh để bóc ruột)
+            const cleanData = (res) => {
+                const raw = Array.isArray(res) ? res : (res?.result || []);
+                return raw.map(item => (item.result ? item.result : item));
+            };
 
-            setList(rewardData);
-            setEmployees(employeeData);
+            const cleanRewardList = cleanData(resData);
+            const cleanEmployeeList = cleanData(resEmp);
+
+            setList(cleanRewardList);
+            setEmployees(cleanEmployeeList);
             
-            console.log("Data Thưởng phạt đã bóc tách:", rewardData);
-            console.log("Data Nhân viên đã bóc tách:", employeeData);
-
+            console.log("Thưởng phạt đã bóc vỏ:", cleanRewardList);
         } catch (error) {
             console.error("Lỗi MySQL:", error);
         } finally {
@@ -35,29 +38,19 @@ const RewardDisciplineList = () => {
 
     useEffect(() => { fetchData(); }, []);
 
-    // HÀM HIỂN THỊ TÊN NHÂN VIÊN: Dò tìm mọi trường có thể
+    // HÀM TÌM TÊN NHÂN VIÊN
     const getEmpName = (item) => {
-        const id = item.employeeId || item.employee_id || (item.employee?.id);
-        
-        // 1. Nếu BE trả về Object lồng
-        if (item.employee?.fullName || item.employee?.full_name) {
-            return item.employee.fullName || item.employee.full_name;
-        }
-
-        // 2. Tìm trong danh sách nhân viên đã load
-        const found = employees.find(e => e.id === id || e.employeeId === id);
-        if (found) return found.fullName || found.full_name || found.name;
-
-        // 3. Nếu vẫn không thấy, hiện ID để không bị trống
-        return id ? `NV - ${id}` : "---";
+        const id = item.employeeId || item.employee_id || item.employee?.id;
+        const found = employees.find(e => e.id === id);
+        return found ? found.fullName : `NV - ${id || '???'}`;
     };
 
+    // 1. CHỨC NĂNG THÊM MỚI (Lưu vào MySQL)
     const handleSubmit = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
         const raw = Object.fromEntries(formData.entries());
 
-        // CHUẨN HÓA DỮ LIỆU GỬI LÊN (Ép kiểu số cho ID và Tiền)
         const data = {
             ...raw,
             employeeId: Number(raw.employeeId),
@@ -70,13 +63,28 @@ const RewardDisciplineList = () => {
             setIsModalOpen(false);
             fetchData();
         } catch (error) {
-            // In lỗi ra để anh biết BE đang chửi gì (ví dụ: sai tên trường)
-            console.error("Lỗi BE trả về:", error.response?.data);
-            alert("Lỗi khi lưu! Anh kiểm tra Console (F12) để xem lỗi chi tiết.");
+            alert("Lỗi khi lưu! (999 - Không có quyền)");
         }
     };
 
-    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu từ MySQL...</div>;
+    // 2. CHỨC NĂNG XÓA (FIX LỖI KHÔNG XÓA ĐƯỢC)
+    const handleDelete = async (id) => {
+        if (!window.confirm("Anh có chắc muốn xóa bản ghi này?")) return;
+        try {
+            // id này giờ đã là id thật sau khi bóc vỏ result
+            await rewardDisciplineApi.delete(id);
+            alert("Đã xóa thành công!");
+            fetchData();
+        } catch (error) {
+            alert("Lỗi khi xóa! (999 - Kiểm quyền Admin)");
+        }
+    };
+
+    const formatVND = (amount) => {
+        return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
+    };
+
+    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu thưởng phạt...</div>;
 
     return (
         <div style={styles.container}>
@@ -107,16 +115,16 @@ const RewardDisciplineList = () => {
                                     </span>
                                 </td>
                                 <td style={{...styles.td, fontWeight: 'bold', color: item.type === 'REWARD' ? '#27ae60' : '#c0392b'}}>
-                                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.amount || 0)}
+                                    {formatVND(item.amount)}
                                 </td>
                                 <td style={styles.td}>{item.decisionDate || item.decision_date || '---'}</td>
-                                <td style={styles.td}><i>{item.reason || '---'}</i></td>
+                                <td style={styles.td}><i>{item.reason}</i></td>
                                 <td style={styles.td}>
-                                    <button style={styles.delBtn} onClick={async () => { if(window.confirm("Xóa?")) { await rewardDisciplineApi.delete(item.id); fetchData(); } }}>Xóa</button>
+                                    <button style={styles.delBtn} onClick={() => handleDelete(item.id)}>Xóa</button>
                                 </td>
                             </tr>
                         )) : (
-                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Dữ liệu MySQL đang trống.</td></tr>
+                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Chưa có dữ liệu từ MySQL.</td></tr>
                         )}
                     </tbody>
                 </table>
@@ -125,7 +133,7 @@ const RewardDisciplineList = () => {
             {isModalOpen && (
                 <div style={styles.overlay}>
                     <div style={styles.modal}>
-                        <h3>THÊM QUYẾT ĐỊNH MỚI</h3>
+                        <h3 style={{marginTop: 0}}>THÊM QUYẾT ĐỊNH</h3>
                         <form onSubmit={handleSubmit}>
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Nhân viên:</label>
@@ -133,7 +141,7 @@ const RewardDisciplineList = () => {
                                     <option value="">-- Chọn nhân viên --</option>
                                     {employees.map(emp => (
                                         <option key={emp.id} value={emp.id}>
-                                            ID: {emp.id} - {emp.fullName || emp.full_name || emp.name}
+                                            {emp.id} - {emp.fullName || emp.full_name}
                                         </option>
                                     ))}
                                 </select>
@@ -183,7 +191,7 @@ const styles = {
     badge: { padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' },
     delBtn: { padding: '5px 10px', backgroundColor: '#e74c3c', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' },
     overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
-    modal: { backgroundColor: '#fff', padding: '25px', borderRadius: '12px', width: '450px' },
+    modal: { backgroundColor: '#fff', padding: '25px', borderRadius: '12px', width: '400px' },
     inputGroup: { marginBottom: '12px' },
     label: { display: 'block', fontWeight: 'bold', fontSize: '13px', marginBottom: '5px' },
     input: { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', boxSizing: 'border-box' },
