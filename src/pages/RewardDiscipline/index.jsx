@@ -16,14 +16,16 @@ const RewardDisciplineList = () => {
                 employeeApi.getAll()
             ]);
 
-            // Bóc tách Thưởng Phạt
-            if (resData && resData.code === 1000) setList(resData.result || []);
-            else if (Array.isArray(resData)) setList(resData);
+            // FIX: BE trả về Array trực tiếp (như trong ảnh Console anh chụp)
+            const rewardData = resData?.result || (Array.isArray(resData) ? resData : []);
+            const employeeData = resEmp?.result || (Array.isArray(resEmp) ? resEmp : []);
 
-            // Bóc tách Nhân Viên - Quan trọng để hiện tên
-            if (resEmp && resEmp.code === 1000) setEmployees(resEmp.result || []);
-            else if (Array.isArray(resEmp)) setEmployees(resEmp);
+            setList(rewardData);
+            setEmployees(employeeData);
             
+            console.log("Data Thưởng phạt đã bóc tách:", rewardData);
+            console.log("Data Nhân viên đã bóc tách:", employeeData);
+
         } catch (error) {
             console.error("Lỗi MySQL:", error);
         } finally {
@@ -33,37 +35,48 @@ const RewardDisciplineList = () => {
 
     useEffect(() => { fetchData(); }, []);
 
-    // HÀM FIX LỖI TRỐNG TÊN: Tìm tên nhân viên dựa vào mọi trường có thể có
-    const displayEmployee = (item) => {
-        // 1. Nếu BE lồng sẵn object employee
-        const empInItem = item.employee || {};
-        const name = empInItem.fullName || empInItem.full_name || empInItem.name;
-        if (name) return name;
+    // HÀM HIỂN THỊ TÊN NHÂN VIÊN: Dò tìm mọi trường có thể
+    const getEmpName = (item) => {
+        const id = item.employeeId || item.employee_id || (item.employee?.id);
+        
+        // 1. Nếu BE trả về Object lồng
+        if (item.employee?.fullName || item.employee?.full_name) {
+            return item.employee.fullName || item.employee.full_name;
+        }
 
-        // 2. Nếu không có object lồng, tìm trong danh sách employees đã tải về
-        const targetId = item.employeeId || item.employee_id;
-        const found = employees.find(e => e.id === targetId || e.employeeId === targetId);
+        // 2. Tìm trong danh sách nhân viên đã load
+        const found = employees.find(e => e.id === id || e.employeeId === id);
         if (found) return found.fullName || found.full_name || found.name;
 
-        // 3. Cuối cùng nếu không thấy tên thì hiện ID
-        return targetId ? `NV - ${targetId}` : "Chưa xác định";
+        // 3. Nếu vẫn không thấy, hiện ID để không bị trống
+        return id ? `NV - ${id}` : "---";
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
-        const data = Object.fromEntries(formData.entries());
+        const raw = Object.fromEntries(formData.entries());
+
+        // CHUẨN HÓA DỮ LIỆU GỬI LÊN (Ép kiểu số cho ID và Tiền)
+        const data = {
+            ...raw,
+            employeeId: Number(raw.employeeId),
+            amount: Number(raw.amount)
+        };
+
         try {
             await rewardDisciplineApi.create(data);
-            alert("Lưu thành công!");
+            alert("Đã lưu vào MySQL thành công!");
             setIsModalOpen(false);
             fetchData();
         } catch (error) {
-            alert("Lỗi khi lưu!");
+            // In lỗi ra để anh biết BE đang chửi gì (ví dụ: sai tên trường)
+            console.error("Lỗi BE trả về:", error.response?.data);
+            alert("Lỗi khi lưu! Anh kiểm tra Console (F12) để xem lỗi chi tiết.");
         }
     };
 
-    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu...</div>;
+    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu từ MySQL...</div>;
 
     return (
         <div style={styles.container}>
@@ -87,12 +100,9 @@ const RewardDisciplineList = () => {
                     <tbody>
                         {list.length > 0 ? list.map((item, index) => (
                             <tr key={item.id || index} style={styles.tr}>
+                                <td style={styles.td}><b>{getEmpName(item)}</b></td>
                                 <td style={styles.td}>
-                                    {/* Gọi hàm hiển thị nhân viên đã fix */}
-                                    <b>{displayEmployee(item)}</b>
-                                </td>
-                                <td style={styles.td}>
-                                    <span style={{...styles.badge, backgroundColor: item.type === 'REWARD' ? '#d4edda' : '#f8d7da', color: item.type === 'REWARD' ? '#155724' : '#721c24'}}>
+                                    <span style={{...styles.badge, backgroundColor: (item.type === 'REWARD' || item.type === 'Thưởng') ? '#d4edda' : '#f8d7da', color: (item.type === 'REWARD' || item.type === 'Thưởng') ? '#155724' : '#721c24'}}>
                                         {item.type === 'REWARD' ? 'KHEN THƯỞNG' : 'KỶ LUẬT'}
                                     </span>
                                 </td>
@@ -106,7 +116,7 @@ const RewardDisciplineList = () => {
                                 </td>
                             </tr>
                         )) : (
-                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Chưa có dữ liệu từ MySQL.</td></tr>
+                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Dữ liệu MySQL đang trống.</td></tr>
                         )}
                     </tbody>
                 </table>
@@ -115,7 +125,7 @@ const RewardDisciplineList = () => {
             {isModalOpen && (
                 <div style={styles.overlay}>
                     <div style={styles.modal}>
-                        <h3 style={{marginTop: 0}}>THÊM QUYẾT ĐỊNH MỚI</h3>
+                        <h3>THÊM QUYẾT ĐỊNH MỚI</h3>
                         <form onSubmit={handleSubmit}>
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Nhân viên:</label>
