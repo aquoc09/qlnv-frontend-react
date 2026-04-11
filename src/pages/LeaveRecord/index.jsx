@@ -10,7 +10,7 @@ const LeaveRecordList = () => {
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
 
-    // 1. LẤY DỮ LIỆU THẬT TỪ BE (Vét mảng trực tiếp)
+    // 1. LẤY DATA THẬT TỪ BE (Fix lỗi mảng trống)
     const fetchData = async () => {
         setLoading(true);
         try {
@@ -20,14 +20,18 @@ const LeaveRecordList = () => {
                 leaveApi.getAll()
             ]);
 
-            // Bóc tách dữ liệu linh hoạt (Hỗ trợ cả .result hoặc Array trực tiếp)
-            setRecords(resRecord?.result || (Array.isArray(resRecord) ? resRecord : []));
-            setEmployees(resEmp?.result || (Array.isArray(resEmp) ? resEmp : []));
-            setLeaveTypes(resType?.result || (Array.isArray(resType) ? resType : []));
+            // FIX: Bóc tách mảng trực tiếp từ BE (như ảnh Console anh chụp)
+            const recordData = resRecord?.result || (Array.isArray(resRecord) ? resRecord : []);
+            const employeeData = resEmp?.result || (Array.isArray(resEmp) ? resEmp : []);
+            const typeData = resType?.result || (Array.isArray(resType) ? resType : []);
 
+            setRecords(recordData);
+            setEmployees(employeeData);
+            setLeaveTypes(typeData);
+
+            console.log("Danh sách nhân viên nạp vào Modal:", employeeData);
         } catch (error) {
             console.error("Lỗi kết nối MySQL:", error);
-            setRecords([]);
         } finally {
             setLoading(false);
         }
@@ -35,7 +39,7 @@ const LeaveRecordList = () => {
 
     useEffect(() => { fetchData(); }, []);
 
-    // HÀM TÌM TÊN NHÂN VIÊN (Fix lỗi NV-undefined)
+    // HÀM TÌM TÊN NHÂN VIÊN (Để bảng không hiện ID)
     const getEmployeeName = (item) => {
         const id = item.employeeId || item.employee_id || item.employee?.id;
         if (item.employee?.fullName || item.employee?.full_name) {
@@ -45,14 +49,14 @@ const LeaveRecordList = () => {
         return found ? (found.fullName || found.full_name) : `NV - ${id || '???'}`;
     };
 
-    // 2. XỬ LÝ DUYỆT / TỪ CHỐI (Gửi đúng status lên BE)
+    // 2. XỬ LÝ DUYỆT / TỪ CHỐI
     const handleUpdateStatus = async (id, status) => {
         try {
             await leaveRecordApi.updateStatus(id, status);
-            alert(`Đã thực hiện: ${status === 'APPROVED' ? 'DUYỆT' : 'TỪ CHỐI'}`);
+            alert(`Đã ${status === 'APPROVED' ? 'DUYỆT' : 'TỪ CHỐI'} đơn thành công!`);
             fetchData();
         } catch (error) {
-            alert("Lỗi: Bạn không có quyền (999) hoặc sai cấu trúc API!");
+            alert("Lỗi: Kiểm tra lại quyền Admin (999)!");
         }
     };
 
@@ -62,6 +66,7 @@ const LeaveRecordList = () => {
         const formData = new FormData(e.target);
         const raw = Object.fromEntries(formData.entries());
 
+        // Ép kiểu số để MySQL nhận được
         const data = {
             ...raw,
             employeeId: Number(raw.employeeId),
@@ -70,11 +75,11 @@ const LeaveRecordList = () => {
 
         try {
             await leaveRecordApi.create(data);
-            alert("Gửi đơn nghỉ phép thành công!");
+            alert("Đã gửi đơn nghỉ phép vào hệ thống!");
             setIsModalOpen(false);
             fetchData();
         } catch (error) {
-            alert("Lỗi: Không thể tạo đơn!");
+            alert("Lỗi khi tạo đơn! Kiểm tra lại ngày nghỉ.");
         }
     };
 
@@ -86,7 +91,7 @@ const LeaveRecordList = () => {
         }
     };
 
-    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu đơn nghỉ...</div>;
+    if (loading) return <div style={{ padding: '20px' }}>Đang nạp đơn nghỉ phép...</div>;
 
     return (
         <div style={styles.container}>
@@ -112,52 +117,55 @@ const LeaveRecordList = () => {
                             records.map((r, index) => (
                                 <tr key={r.id || index} style={styles.tr}>
                                     <td style={styles.td}><b>{getEmployeeName(r)}</b></td>
-                                    <td style={styles.td}>{r.startDate || r.start_date}</td>
-                                    <td style={styles.td}>{r.endDate || r.end_date}</td>
-                                    <td style={styles.td}><i>{r.reason}</i></td>
+                                    <td style={styles.td}>{r.startDate || r.start_date || '---'}</td>
+                                    <td style={styles.td}>{r.endDate || r.end_date || '---'}</td>
+                                    <td style={styles.td}><i>{r.reason || '---'}</i></td>
                                     <td style={styles.td}>
                                         <span style={{...styles.badge, ...getStatusStyle(r.status)}}>
                                             {r.status === 'APPROVED' ? 'Đã duyệt' : r.status === 'REJECTED' ? 'Từ chối' : 'Chờ duyệt'}
                                         </span>
                                     </td>
                                     <td style={styles.td}>
-                                        {r.status === 'PENDING' && (
+                                        {(r.status === 'PENDING' || r.status === 'Chờ duyệt') && (
                                             <div style={{display: 'flex', gap: '5px'}}>
                                                 <button style={styles.btnApprove} onClick={() => handleUpdateStatus(r.id, 'APPROVED')}>Duyệt</button>
                                                 <button style={styles.btnReject} onClick={() => handleUpdateStatus(r.id, 'REJECTED')}>Từ chối</button>
                                             </div>
                                         )}
-                                        <button style={styles.btnDel} onClick={async () => { if(window.confirm("Xóa đơn?")) { await leaveRecordApi.delete(r.id); fetchData(); } }}>Xóa</button>
+                                        <button style={styles.btnDel} onClick={async () => { if(window.confirm("Xóa đơn này?")) { await leaveRecordApi.delete(r.id); fetchData(); } }}>Xóa</button>
                                     </td>
                                 </tr>
                             ))
                         ) : (
-                            <tr><td colSpan="6" style={{textAlign: 'center', padding: '40px'}}>Chưa có đơn nghỉ phép nào trong Database.</td></tr>
+                            <tr><td colSpan="6" style={{textAlign: 'center', padding: '40px'}}>Dữ liệu đơn nghỉ đang trống.</td></tr>
                         )}
                     </tbody>
                 </table>
             </div>
 
-            {/* MODAL TẠO ĐƠN */}
+            {/* MODAL TẠO ĐƠN - ĐÃ FIX HIỆN TÊN NHÂN VIÊN */}
             {isModalOpen && (
                 <div style={styles.overlay}>
                     <div style={styles.modal}>
-                        <h3>TẠO ĐƠN NGHỈ PHÉP</h3>
+                        <h3 style={{marginTop: 0}}>TẠO ĐƠN NGHỈ PHÉP</h3>
                         <form onSubmit={handleSubmit}>
                             <div style={styles.inputGroup}>
-                                <label style={styles.label}>Nhân viên:</label>
+                                <label style={styles.label}>Chọn nhân viên:</label>
                                 <select name="employeeId" style={styles.input} required>
                                     <option value="">-- Chọn nhân viên --</option>
                                     {employees.map(emp => (
-                                        <option key={emp.id} value={emp.id}>{emp.fullName || emp.full_name}</option>
+                                        <option key={emp.id} value={emp.id}>
+                                            ID: {emp.id} - {emp.fullName || emp.full_name}
+                                        </option>
                                     ))}
                                 </select>
                             </div>
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Loại nghỉ:</label>
                                 <select name="leaveId" style={styles.input} required>
+                                    <option value="">-- Chọn loại nghỉ --</option>
                                     {leaveTypes.map(type => (
-                                        <option key={type.id} value={type.id}>{type.leaveName}</option>
+                                        <option key={type.id} value={type.id}>{type.leaveName || type.leave_name}</option>
                                     ))}
                                 </select>
                             </div>
@@ -171,7 +179,7 @@ const LeaveRecordList = () => {
                             </div>
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Lý do:</label>
-                                <textarea name="reason" style={styles.input} rows="3" required></textarea>
+                                <textarea name="reason" style={styles.input} rows="3" required placeholder="Nhập lý do nghỉ..."></textarea>
                             </div>
                             <div style={styles.btnGroup}>
                                 <button type="button" onClick={() => setIsModalOpen(false)} style={styles.btnCancel}>Hủy</button>
