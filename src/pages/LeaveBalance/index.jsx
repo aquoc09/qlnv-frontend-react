@@ -9,7 +9,7 @@ const LeaveBalanceList = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingBalance, setEditingBalance] = useState(null);
 
-    // 1. LẤY DATA THẬT TỪ BE (Bóc tách mảng trực tiếp)
+    // 1. GỌI API LẤY DATA THẬT (Fix lỗi bóc tách lồng result)
     const fetchData = async () => {
         setLoading(true);
         try {
@@ -18,12 +18,19 @@ const LeaveBalanceList = () => {
                 employeeApi.getAll()
             ]);
 
-            // FIX: BE trả về Array trực tiếp (như ảnh Console anh chụp là Array(5))
-            const balanceData = resBalance?.result || (Array.isArray(resBalance) ? resBalance : []);
-            const employeeData = resEmp?.result || (Array.isArray(resEmp) ? resEmp : []);
+            // HÀM BÓC TÁCH: Nếu item có .result thì lấy .result, không thì lấy chính nó
+            const cleanData = (res) => {
+                const raw = Array.isArray(res) ? res : (res?.result || []);
+                return raw.map(item => item.result ? item.result : item);
+            };
 
-            setBalances(balanceData);
-            setEmployees(employeeData);
+            const cleanBalances = cleanData(resBalance);
+            const cleanEmployees = cleanData(resEmp);
+
+            setBalances(cleanBalances);
+            setEmployees(cleanEmployees);
+
+            console.log("Dữ liệu Quỹ phép đã làm sạch:", cleanBalances);
         } catch (error) {
             console.error("Lỗi kết nối MySQL:", error);
             setBalances([]);
@@ -34,37 +41,40 @@ const LeaveBalanceList = () => {
 
     useEffect(() => { fetchData(); }, []);
 
-    // HÀM TÌM TÊN NHÂN VIÊN (Fix lỗi NV-undefined)
+    // HÀM TÌM TÊN NHÂN VIÊN (Dựa trên mảng nhân viên đã làm sạch)
     const getEmployeeName = (item) => {
-        const id = item.employeeId || item.employee_id || item.employee?.id;
-        if (item.employee?.fullName || item.employee?.full_name) {
-            return item.employee.fullName || item.employee.full_name;
-        }
-        const found = employees.find(e => e.id === id || e.employeeId === id);
-        return found ? (found.fullName || found.full_name) : `NV - ${id || '???'}`;
+        const id = item.employeeId || item.employee_id;
+        const found = employees.find(e => e.id === id);
+        return found ? found.fullName : `NV-${id || '???'}`;
     };
 
-    // 2. XỬ LÝ CẬP NHẬT (Lưu số ngày vào MySQL)
+    // 2. XỬ LÝ CẬP NHẬT (Sửa số ngày phép)
     const handleUpdate = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
+        
+        // Dữ liệu gửi xuống BE Java
         const data = {
             daysUsed: Number(formData.get('daysUsed')),
             daysRemaining: Number(formData.get('daysRemaining'))
         };
 
         try {
+            // Lấy ID thật sự (đã bóc lớp result)
             const id = editingBalance.id || editingBalance.leave_balance_id;
             await leaveBalanceApi.update(id, data);
-            alert("Cập nhật quỹ phép thành công!");
+            
+            alert("Cập nhật quỹ phép thành công vào MySQL!");
             setIsModalOpen(false);
-            fetchData();
+            // Quan trọng: Gọi lại fetchData để bảng cập nhật số mới ngay lập tức
+            await fetchData(); 
         } catch (error) {
-            alert("Lỗi: Không có quyền hoặc sai cấu trúc dữ liệu (999)!");
+            console.error("Lỗi lưu:", error.response?.data);
+            alert("Lỗi: Không thể lưu! (Kiểm tra quyền Admin 999)");
         }
     };
 
-    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu từ Database...</div>;
+    if (loading) return <div style={{ padding: '20px' }}>Đang nạp quỹ phép...</div>;
 
     return (
         <div style={styles.container}>
@@ -89,13 +99,13 @@ const LeaveBalanceList = () => {
                                 <tr key={b.id || index} style={styles.tr}>
                                     <td style={styles.td}><b>{getEmployeeName(b)}</b></td>
                                     <td style={styles.td}>
-                                        {b.leaveType?.leaveName || b.leaveName || `ID: ${b.leaveId || b.leave_id}`}
+                                        {b.leaveType?.leaveName || b.leaveName || `Loại ID: ${b.leaveId}`}
                                     </td>
                                     <td style={{...styles.td, color: '#e67e22', fontWeight: 'bold'}}>
-                                        {b.daysUsed || b.days_used || 0} ngày
+                                        {b.daysUsed ?? b.days_used ?? 0} ngày
                                     </td>
                                     <td style={{...styles.td, color: '#27ae60', fontWeight: 'bold'}}>
-                                        {b.daysRemaining || b.days_remaining || 0} ngày
+                                        {b.daysRemaining ?? b.days_remaining ?? 0} ngày
                                     </td>
                                     <td style={styles.td}>
                                         <button 
@@ -108,7 +118,7 @@ const LeaveBalanceList = () => {
                                 </tr>
                             ))
                         ) : (
-                            <tr><td colSpan="5" style={{ textAlign: 'center', padding: '40px' }}>Dữ liệu MySQL đang trống.</td></tr>
+                            <tr><td colSpan="5" style={{ textAlign: 'center', padding: '40px' }}>Hiện chưa có dữ liệu trong MySQL.</td></tr>
                         )}
                     </tbody>
                 </table>
@@ -122,11 +132,23 @@ const LeaveBalanceList = () => {
                         <form onSubmit={handleUpdate} style={{marginTop: '15px'}}>
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Số ngày đã nghỉ:</label>
-                                <input name="daysUsed" type="number" defaultValue={editingBalance?.daysUsed || editingBalance?.days_used} style={styles.input} required />
+                                <input 
+                                    name="daysUsed" 
+                                    type="number" 
+                                    defaultValue={editingBalance?.daysUsed ?? editingBalance?.days_used} 
+                                    style={styles.input} 
+                                    required 
+                                />
                             </div>
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Số ngày còn lại:</label>
-                                <input name="daysRemaining" type="number" defaultValue={editingBalance?.daysRemaining || editingBalance?.days_remaining} style={styles.input} required />
+                                <input 
+                                    name="daysRemaining" 
+                                    type="number" 
+                                    defaultValue={editingBalance?.daysRemaining ?? editingBalance?.days_remaining} 
+                                    style={styles.input} 
+                                    required 
+                                />
                             </div>
                             <div style={styles.btnGroup}>
                                 <button type="button" onClick={() => setIsModalOpen(false)} style={styles.btnCancel}>Hủy</button>
