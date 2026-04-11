@@ -7,21 +7,20 @@ const AttendanceList = () => {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingRecord, setEditingRecord] = useState(null);
 
-    // 1. LẤY DATA VÀ BÓC TRẦN (Lột sạch lớp result lồng nhau)
+    // 1. LẤY DỮ LIỆU VÀ BÓC TÁCH (Phá mọi lớp vỏ result)
     const fetchData = async () => {
         setLoading(true);
         try {
             const response = await attendanceApi.getAll();
-            console.log("Dữ liệu thô từ BE Chấm công:", response);
-
-            // BÓC TÁCH MẠNH: Dò ruột mảng BE trả về
+            
+            // BÓC TRẦN: Chấp nhận mọi kiểu trả về từ Java (.result hoặc mảng thẳng)
             let rawData = Array.isArray(response) ? response : (response?.result || []);
             
-            // PHÁ VỎ TỪNG DÒNG: Nếu dòng đó bị bọc trong .result thì lột ra
+            // LỘT VỎ TỪNG DÒNG: Nếu dòng bị bọc trong .result thì lấy ra
             const cleanData = rawData.map(item => (item.result ? item.result : item));
             
             setList(cleanData);
-            console.log("Dữ liệu Chấm công sau khi bóc trần:", cleanData);
+            console.log("Dữ liệu Chấm công chuẩn từ MySQL:", cleanData);
         } catch (error) {
             console.error("Lỗi kết nối MySQL:", error);
             setList([]);
@@ -32,28 +31,29 @@ const AttendanceList = () => {
 
     useEffect(() => { fetchData(); }, []);
 
-    // 2. CHỨC NĂNG VÀO CA / RA CA (Đúng chuẩn API BE)
+    // 2. CHỨC NĂNG VÀO CA (Check-in)
     const handleCheckIn = async () => {
         try {
             await attendanceApi.checkIn();
-            alert("Hệ thống: Check-in thành công!");
-            await fetchData(); // Cập nhật lại bảng ngay
+            alert("VÀO CA thành công!");
+            await fetchData(); // Cập nhật để hiện dòng vừa chấm lên bảng
         } catch (error) {
-            alert("Lỗi: " + (error.response?.data?.message || "Hôm nay anh đã vào ca rồi!"));
+            alert("Lỗi: " + (error.response?.data?.message || "Anh đã vào ca rồi!"));
         }
     };
 
+    // 3. CHỨC NĂNG RA CA (Check-out)
     const handleCheckOut = async () => {
         try {
             await attendanceApi.checkOut();
-            alert("Hệ thống: Check-out thành công!");
-            await fetchData(); // Cập nhật lại bảng ngay
+            alert("RA CA thành công!");
+            await fetchData(); // Cập nhật để hiện giờ ra lên bảng
         } catch (error) {
-            alert("Lỗi: " + (error.response?.data?.message || "Anh chưa vào ca hoặc đã ra ca rồi!"));
+            alert("Lỗi: " + (error.response?.data?.message || "Chưa vào ca hoặc đã ra ca!"));
         }
     };
 
-    // 3. CHỨC NĂNG SỬA (PUT)
+    // 4. CHỨC NĂNG SỬA
     const handleUpdate = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
@@ -63,8 +63,9 @@ const AttendanceList = () => {
             status: formData.get('status')
         };
         try {
-            await attendanceApi.update(editingRecord.id || editingRecord.attendanceId, data);
-            alert("Đã cập nhật giờ công!");
+            const id = editingRecord.id || editingRecord.attendanceId;
+            await attendanceApi.update(id, data);
+            alert("Đã cập nhật giờ công thành công!");
             setIsEditModalOpen(false);
             fetchData();
         } catch (error) {
@@ -72,12 +73,11 @@ const AttendanceList = () => {
         }
     };
 
-    // 4. CHỨC NĂNG XÓA (DELETE)
+    // 5. CHỨC NĂNG XÓA
     const handleDelete = async (id) => {
-        if (!window.confirm("Anh có chắc muốn xóa lịch sử chấm công này?")) return;
+        if (!window.confirm("Xóa lịch sử chấm công này?")) return;
         try {
             await attendanceApi.delete(id);
-            alert("Đã xóa bản ghi!");
             fetchData();
         } catch (error) {
             alert("Lỗi xóa: 999");
@@ -86,12 +86,12 @@ const AttendanceList = () => {
 
     const renderStatus = (status) => {
         const s = String(status || '').toUpperCase();
-        if (s === 'PRESENT' || s === 'ĐÚNG GIỜ') return <span style={{...styles.badge, backgroundColor: '#d4edda', color: '#155724'}}>Đúng giờ</span>;
-        if (s === 'LATE' || s === 'ĐI MUỘN') return <span style={{...styles.badge, backgroundColor: '#fff3cd', color: '#856404'}}>Đi muộn</span>;
-        return <span style={{...styles.badge, backgroundColor: '#f8d7da', color: '#721c24'}}>Về sớm</span>;
+        if (s === 'PRESENT' || s === 'ĐÚNG GIỜ') return <span style={styles.badgeOk}>Đúng giờ</span>;
+        if (s === 'LATE' || s === 'ĐI MUỘN') return <span style={styles.badgeWarn}>Đi muộn</span>;
+        return <span style={styles.badgeErr}>Về sớm</span>;
     };
 
-    if (loading) return <div style={{ padding: '20px' }}>Đang bóc tách dữ liệu chấm công...</div>;
+    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu...</div>;
 
     return (
         <div style={styles.container}>
@@ -118,18 +118,18 @@ const AttendanceList = () => {
                         {list.length > 0 ? list.map((item, index) => (
                             <tr key={item.id || index} style={styles.tr}>
                                 <td style={styles.td}><b>{item.workDate || item.work_date}</b></td>
-                                <td style={{...styles.td, color: '#27ae60', fontWeight: 'bold'}}>{item.checkIn || item.check_in || '---'}</td>
-                                <td style={{...styles.td, color: '#e67e22', fontWeight: 'bold'}}>{item.checkOut || item.check_out || '---'}</td>
+                                <td style={{...styles.td, color: '#27ae60', fontWeight: 'bold'}}>{item.checkIn || '---'}</td>
+                                <td style={{...styles.td, color: '#e67e22', fontWeight: 'bold'}}>{item.checkOut || '---'}</td>
                                 <td style={styles.td}>{renderStatus(item.status)}</td>
                                 <td style={styles.td}>
                                     <button style={styles.btnEdit} onClick={() => { setEditingRecord(item); setIsEditModalOpen(true); }}>Sửa</button>
-                                    <button style={styles.btnDel} onClick={() => handleDelete(item.id || item.attendanceId)}>Xóa</button>
+                                    <button style={styles.btnDel} onClick={() => handleDelete(item.id)}>Xóa</button>
                                 </td>
                             </tr>
                         )) : (
                             <tr>
-                                <td colSpan="5" style={{ textAlign: 'center', padding: '40px' }}>
-                                    <b>Bảng trống. Anh hãy nhấn nút "VÀO CA" để tạo dữ liệu mẫu!</b>
+                                <td colSpan="5" style={{ textAlign: 'center', padding: '40px', color: '#999', fontWeight: 'bold' }}>
+                                    CHƯA CHẤM
                                 </td>
                             </tr>
                         )}
@@ -141,7 +141,7 @@ const AttendanceList = () => {
             {isEditModalOpen && (
                 <div style={styles.overlay}>
                     <div style={styles.modal}>
-                        <h3 style={{marginTop: 0}}>ĐIỀU CHỈNH GIỜ CÔNG</h3>
+                        <h3 style={{marginTop: 0}}>SỬA GIỜ CÔNG</h3>
                         <form onSubmit={handleUpdate}>
                             <label style={styles.label}>Giờ vào:</label>
                             <input name="checkIn" type="time" step="1" defaultValue={editingRecord?.checkIn} style={styles.input} required />
@@ -178,15 +178,17 @@ const styles = {
     th: { padding: '15px', textAlign: 'left' },
     td: { padding: '15px', borderBottom: '1px solid #eee' },
     tr: { transition: '0.3s' },
-    badge: { padding: '4px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' },
-    btnEdit: { padding: '5px 10px', backgroundColor: '#f1c40f', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: '5px', fontWeight: 'bold' },
+    badgeOk: { padding: '4px 10px', backgroundColor: '#d4edda', color: '#155724', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' },
+    badgeWarn: { padding: '4px 10px', backgroundColor: '#fff3cd', color: '#856404', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' },
+    badgeErr: { padding: '4px 10px', backgroundColor: '#f8d7da', color: '#721c24', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' },
+    btnEdit: { padding: '5px 10px', backgroundColor: '#f1c40f', border: 'none', borderRadius: '4px', cursor: 'pointer', marginRight: '5px' },
     btnDel: { padding: '5px 10px', backgroundColor: '#e74c3c', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' },
     overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
     modal: { backgroundColor: '#fff', padding: '25px', borderRadius: '12px', width: '350px' },
     label: { display: 'block', fontWeight: 'bold', fontSize: '12px', marginTop: '10px' },
     input: { width: '100%', padding: '10px', marginTop: '5px', border: '1px solid #ddd', borderRadius: '6px', boxSizing: 'border-box' },
     btnGroup: { display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' },
-    btnCancel: { padding: '10px 20px', backgroundColor: '#eee', border: 'none', borderRadius: '6px', cursor: 'pointer' },
+    btnCancel: { padding: '10px 20px', backgroundColor: '#eee', border: 'none', borderRadius: '6px' },
     btnSave: { padding: '10px 20px', backgroundColor: '#2c3e50', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }
 };
 
