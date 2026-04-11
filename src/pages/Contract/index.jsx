@@ -9,7 +9,12 @@ const ContractList = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentContract, setCurrentContract] = useState(null);
 
-    // 1. LẤY DỮ LIỆU TỪ BE (Bóc trần 100%)
+    // HÀM BÓC TÁCH DỮ LIỆU TỪ LỚP VỎ result (Nhìn F12 của anh để lột vỏ)
+    const cleanData = (res) => {
+        const raw = Array.isArray(res) ? res : (res?.result || []);
+        return raw.map(item => (item.result ? item.result : item));
+    };
+
     const fetchData = async () => {
         setLoading(true);
         try {
@@ -18,15 +23,10 @@ const ContractList = () => {
                 employeeApi.getAll()
             ]);
 
-            const cleanData = (res) => {
-                const raw = Array.isArray(res) ? res : (res?.result || []);
-                return raw.map(item => (item.result ? item.result : item));
-            };
-
             setContracts(cleanData(contractRes));
             setEmployees(cleanData(employeeRes));
         } catch (error) {
-            console.error("Lỗi MySQL:", error);
+            console.error("Lỗi kết nối MySQL:", error);
         } finally {
             setLoading(false);
         }
@@ -34,45 +34,51 @@ const ContractList = () => {
 
     useEffect(() => { fetchData(); }, []);
 
-    // 2. XỬ LÝ LƯU (BÓC TRẦN DỮ LIỆU THÊM MỚI)
+    // XỬ LÝ KHI NHẤN NÚT SỬA (Quan trọng: Phải lấy đúng ruột dữ liệu)
+    const handleEdit = (contract) => {
+        // Đảm bảo dữ liệu đưa vào Modal là dữ liệu đã bóc tách
+        setCurrentContract(contract);
+        setIsModalOpen(true);
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
         const rawData = Object.fromEntries(formData.entries());
 
+        // CHUẨN HÓA DỮ LIỆU GỬI XUỐNG BE JAVA
         const dataToSend = {
             ...rawData,
             employeeId: Number(rawData.employeeId),
-            baseSalary: Number(rawData.baseSalary)
+            baseSalary: Number(rawData.baseSalary),
+            status: rawData.status
         };
 
         try {
             if (currentContract) {
-                const id = currentContract.id || currentContract.contractId;
+                // Lấy ID thật sự sau khi đã bóc vỏ result
+                const id = currentContract.id || currentContract.contractId || currentContract.contract_id;
                 await contractApi.update(id, dataToSend);
-                alert("Cập nhật hợp đồng thành công!");
+                alert("Đã cập nhật hợp đồng vào MySQL!");
             } else {
-                // KHI THÊM MỚI: Bắt BE bóc trần dữ liệu trả về
-                const response = await contractApi.create(dataToSend);
-                console.log("Dữ liệu BE trả về khi thêm:", response);
-                alert("Đã ký hợp đồng mới thành công vào MySQL!");
+                await contractApi.create(dataToSend);
+                alert("Đã ký hợp đồng mới thành công!");
             }
             setIsModalOpen(false);
-            // GỌI LẠI FETCH ĐỂ CẬP NHẬT BẢNG NGAY LẬP TỨC
-            await fetchData(); 
+            await fetchData(); // Ép bảng cập nhật ngay lập tức
         } catch (error) {
-            alert("Lỗi: Có thể nhân viên này đã có hợp đồng rồi!");
+            console.error("Lỗi BE trả về:", error.response?.data);
+            alert("Lỗi: " + (error.response?.data?.message || "999 - Không có quyền hoặc sai dữ liệu!"));
         }
     };
 
     const handleDelete = async (id) => {
-        if (window.confirm(`Xóa hợp đồng số ${id}?`)) {
-            try {
-                await contractApi.delete(id);
-                fetchData();
-            } catch (error) {
-                alert("Lỗi xóa: Kiểm tra quyền Admin 999");
-            }
+        if (!window.confirm("Anh có chắc muốn hủy hợp đồng này?")) return;
+        try {
+            await contractApi.delete(id);
+            fetchData();
+        } catch (error) {
+            alert("Lỗi xóa: " + (error.response?.data?.message || "999"));
         }
     };
 
@@ -80,7 +86,7 @@ const ContractList = () => {
         return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
     };
 
-    if (loading) return <div style={{ padding: '20px' }}>Đang nạp hợp đồng từ MySQL...</div>;
+    if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu hợp đồng...</div>;
 
     return (
         <div style={styles.container}>
@@ -114,30 +120,30 @@ const ContractList = () => {
                                     <tr key={cId || index} style={styles.tr}>
                                         <td style={styles.td}><b>HĐ-{cId}</b></td>
                                         <td style={styles.td}>
-                                            {c.employee?.fullName || c.employee?.full_name || `Mã NV: ${c.employeeId || c.employee_id}`}
+                                            <b>{c.employee?.fullName || c.employee?.full_name || `Mã NV: ${c.employeeId || c.employee_id}`}</b>
                                         </td>
-                                        <td style={styles.td}>{c.type || c.contractType}</td>
+                                        <td style={styles.td}>{c.type || c.contractType || 'FULL_TIME'}</td>
                                         <td style={{...styles.td, color: '#e67e22', fontWeight: 'bold'}}>
                                             {formatVND(c.baseSalary || c.base_salary)}
                                         </td>
                                         <td style={styles.td}>
                                             <span style={{
                                                 ...styles.statusBadge, 
-                                                backgroundColor: (c.status === "Expired" || c.status === "Đã hết hạn") ? "#f8d7da" : "#d4edda",
-                                                color: (c.status === "Expired" || c.status === "Đã hết hạn") ? "#721c24" : "#155724"
+                                                backgroundColor: (c.status === "EXPIRED" || c.status === "ENDED") ? "#f8d7da" : "#d4edda",
+                                                color: (c.status === "EXPIRED" || c.status === "ENDED") ? "#721c24" : "#155724"
                                             }}>
-                                                {c.status || "Đang hiệu lực"}
+                                                {c.status || "ACTIVE"}
                                             </span>
                                         </td>
                                         <td style={styles.td}>
-                                            <button style={styles.editBtn} onClick={() => { setCurrentContract(c); setIsModalOpen(true); }}>Sửa</button>
+                                            <button style={styles.editBtn} onClick={() => handleEdit(c)}>Sửa</button>
                                             <button style={styles.deleteBtn} onClick={() => handleDelete(cId)}>Xóa</button>
                                         </td>
                                     </tr>
                                 );
                             })
                         ) : (
-                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Chưa có hợp đồng nào.</td></tr>
+                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Bảng trống. Hãy ký hợp đồng mới!</td></tr>
                         )}
                     </tbody>
                 </table>
@@ -154,6 +160,7 @@ const ContractList = () => {
                                     name="employeeId" 
                                     defaultValue={currentContract?.employeeId || currentContract?.employee_id} 
                                     style={styles.input} 
+                                    disabled={!!currentContract} // Không cho đổi nhân viên khi sửa
                                     required
                                 >
                                     <option value="">-- Chọn nhân viên --</option>
@@ -166,21 +173,22 @@ const ContractList = () => {
                             </div>
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Loại hợp đồng:</label>
-                                <select name="type" defaultValue={currentContract?.type || "Chính thức"} style={styles.input}>
-                                    <option value="Chính thức">Chính thức</option>
-                                    <option value="Thử việc">Thử việc</option>
-                                    <option value="Thời vụ">Thời vụ</option>
+                                <select name="type" defaultValue={currentContract?.type || "FULL_TIME"} style={styles.input}>
+                                    <option value="FULL_TIME">Chính thức</option>
+                                    <option value="PART_TIME">Bán thời gian</option>
+                                    <option value="TRIAL">Thử việc</option>
                                 </select>
                             </div>
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Lương cơ bản:</label>
-                                <input name="baseSalary" type="number" defaultValue={currentContract?.baseSalary} style={styles.input} required/>
+                                <input name="baseSalary" type="number" defaultValue={currentContract?.baseSalary || currentContract?.base_salary} style={styles.input} required/>
                             </div>
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Trạng thái:</label>
-                                <select name="status" defaultValue={currentContract?.status || "Active"} style={styles.input}>
-                                    <option value="Active">Đang hiệu lực</option>
-                                    <option value="Expired">Đã hết hạn</option>
+                                <select name="status" defaultValue={currentContract?.status || "ACTIVE"} style={styles.input}>
+                                    <option value="ACTIVE">Đang hiệu lực</option>
+                                    <option value="EXPIRED">Đã hết hạn</option>
+                                    <option value="ENDED">Đã chấm dứt</option>
                                 </select>
                             </div>
                             <div style={styles.btnGroup}>
@@ -197,7 +205,7 @@ const ContractList = () => {
 
 const styles = {
     container: { padding: '40px', backgroundColor: '#f4f7f6', minHeight: '100vh' },
-    header: { display: 'flex', justifyContent: 'space-between', marginBottom: '30px' },
+    header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' },
     title: { margin: 0, color: '#2c3e50', fontSize: '24px' },
     addButton: { padding: '12px 20px', backgroundColor: '#28a745', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' },
     tableWrapper: { backgroundColor: '#fff', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' },
