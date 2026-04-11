@@ -11,22 +11,18 @@ const RewardDisciplineList = () => {
     const fetchData = async () => {
         setLoading(true);
         try {
+            // Gọi cả 2 API cùng lúc: Thưởng phạt và Danh sách nhân viên
             const [resData, resEmp] = await Promise.all([
                 rewardDisciplineApi.getAll(),
                 employeeApi.getAll()
             ]);
 
-            // Bóc tách danh sách Thưởng/Phạt
-            if (resData && resData.code === 1000) {
-                setList(resData.result || []);
-            } else if (Array.isArray(resData)) {
-                setList(resData);
-            }
+            if (resData && resData.code === 1000) setList(resData.result || []);
+            else if (Array.isArray(resData)) setList(resData);
 
-            // Bóc tách danh sách Nhân viên
-            if (resEmp && resEmp.code === 1000) {
-                setEmployees(resEmp.result || []);
-            }
+            if (resEmp && resEmp.code === 1000) setEmployees(resEmp.result || []);
+            else if (Array.isArray(resEmp)) setEmployees(resEmp);
+            
         } catch (error) {
             console.error("Lỗi kết nối MySQL:", error);
         } finally {
@@ -36,33 +32,39 @@ const RewardDisciplineList = () => {
 
     useEffect(() => { fetchData(); }, []);
 
+    // HÀM TÌM TÊN NHÂN VIÊN DỰA VÀO ID (Để fix lỗi ??? của anh)
+    const getEmployeeName = (item) => {
+        // Trường hợp 1: BE đã JOIN sẵn và trả về object employee
+        if (item.employee?.fullName) return item.employee.fullName;
+        if (item.employee?.full_name) return item.employee.full_name;
+
+        // Trường hợp 2: BE chỉ trả về ID, ta tìm trong danh sách employees đã nạp
+        const emp = employees.find(e => e.id === (item.employeeId || item.employee_id));
+        if (emp) return emp.fullName || emp.full_name;
+
+        // Trường hợp cuối: Không tìm thấy thì hiện ID
+        return `NV-${item.employeeId || item.employee_id || 'Chưa rõ'}`;
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData.entries());
         try {
             await rewardDisciplineApi.create(data);
-            alert("Đã lưu thành công!");
+            alert("Lưu thành công vào MySQL!");
             setIsModalOpen(false);
             fetchData();
         } catch (error) {
-            alert("Lỗi khi lưu!");
+            alert("Lỗi khi lưu dữ liệu!");
         }
     };
 
     const handleDelete = async (id) => {
         if (window.confirm("Xóa bản ghi này?")) {
-            try {
-                await rewardDisciplineApi.delete(id);
-                fetchData();
-            } catch (error) {
-                alert("Lỗi khi xóa!");
-            }
+            try { await rewardDisciplineApi.delete(id); fetchData(); } 
+            catch (error) { alert("Lỗi khi xóa!"); }
         }
-    };
-
-    const formatVND = (amount) => {
-        return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
     };
 
     if (loading) return <div style={{ padding: '20px' }}>Đang nạp dữ liệu...</div>;
@@ -70,10 +72,7 @@ const RewardDisciplineList = () => {
     return (
         <div style={styles.container}>
             <div style={styles.header}>
-                <div>
-                    <h2 style={styles.title}>| 9. KHEN THƯỞNG & KỶ LUẬT</h2>
-                    {/* ĐÃ BỎ DÒNG CHỮ KẾT NỐI THEO Ý ANH */}
-                </div>
+                <h2 style={styles.title}>| 9. KHEN THƯỞNG & KỶ LUẬT</h2>
                 <button style={styles.addButton} onClick={() => setIsModalOpen(true)}>+ Thêm quyết định</button>
             </div>
             
@@ -90,40 +89,28 @@ const RewardDisciplineList = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {list.length > 0 ? (
-                            list.map((item, index) => (
-                                <tr key={item.id || index} style={styles.tr}>
-                                    <td style={styles.td}>
-                                        {/* LOGIC VÉT DỮ LIỆU: Thử mọi trường hợp BE có thể trả về */}
-                                        <b>
-                                            {item.employee?.fullName || 
-                                             item.employee?.full_name || 
-                                             item.employeeName || 
-                                             item.full_name ||
-                                             `Mã NV: ${item.employeeId || '???'}`}
-                                        </b>
-                                    </td>
-                                    <td style={styles.td}>
-                                        <span style={{
-                                            ...styles.badge,
-                                            backgroundColor: (item.type === 'REWARD' || item.type === 'Thưởng') ? '#d4edda' : '#f8d7da',
-                                            color: (item.type === 'REWARD' || item.type === 'Thưởng') ? '#155724' : '#721c24'
-                                        }}>
-                                            {(item.type === 'REWARD' || item.type === 'Thưởng') ? 'KHEN THƯỞNG' : 'KỶ LUẬT'}
-                                        </span>
-                                    </td>
-                                    <td style={{ ...styles.td, fontWeight: 'bold', color: (item.type === 'REWARD' || item.type === 'Thưởng') ? '#27ae60' : '#c0392b' }}>
-                                        {formatVND(item.amount || 0)}
-                                    </td>
-                                    <td style={styles.td}>{item.decisionDate || item.decision_date || '---'}</td>
-                                    <td style={styles.td}><i>{item.reason || '---'}</i></td>
-                                    <td style={styles.td}>
-                                        <button style={styles.delBtn} onClick={() => handleDelete(item.id)}>Xóa</button>
-                                    </td>
-                                </tr>
-                            ))
-                        ) : (
-                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Chưa có dữ liệu thật. Anh nhấn "Thêm quyết định" để nạp data.</td></tr>
+                        {list.length > 0 ? list.map((item, index) => (
+                            <tr key={item.id || index} style={styles.tr}>
+                                <td style={styles.td}>
+                                    {/* SỬ DỤNG HÀM TÌM TÊN Ở ĐÂY */}
+                                    <b>{getEmployeeName(item)}</b>
+                                </td>
+                                <td style={styles.td}>
+                                    <span style={{...styles.badge, backgroundColor: item.type === 'REWARD' ? '#d4edda' : '#f8d7da', color: item.type === 'REWARD' ? '#155724' : '#721c24'}}>
+                                        {item.type === 'REWARD' ? 'KHEN THƯỞNG' : 'KỶ LUẬT'}
+                                    </span>
+                                </td>
+                                <td style={{...styles.td, fontWeight: 'bold', color: item.type === 'REWARD' ? '#27ae60' : '#c0392b'}}>
+                                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.amount || 0)}
+                                </td>
+                                <td style={styles.td}>{item.decisionDate || item.decision_date || '---'}</td>
+                                <td style={styles.td}><i>{item.reason || '---'}</i></td>
+                                <td style={styles.td}>
+                                    <button style={styles.delBtn} onClick={() => handleDelete(item.id)}>Xóa</button>
+                                </td>
+                            </tr>
+                        )) : (
+                            <tr><td colSpan="6" style={{ textAlign: 'center', padding: '40px' }}>Chưa có dữ liệu thật.</td></tr>
                         )}
                     </tbody>
                 </table>
@@ -137,9 +124,12 @@ const RewardDisciplineList = () => {
                             <div style={styles.inputGroup}>
                                 <label style={styles.label}>Nhân viên:</label>
                                 <select name="employeeId" style={styles.input} required>
-                                    <option value="">-- Chọn nhân viên --</option>
+                                    <option value="">-- Chọn nhân viên từ danh sách --</option>
                                     {employees.map(emp => (
-                                        <option key={emp.id} value={emp.id}>{emp.fullName || emp.full_name}</option>
+                                        <option key={emp.id} value={emp.id}>
+                                            {/* Hiện cả ID và Tên cho chắc chắn */}
+                                            {emp.id} - {emp.fullName || emp.full_name}
+                                        </option>
                                     ))}
                                 </select>
                             </div>
@@ -188,7 +178,7 @@ const styles = {
     badge: { padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' },
     delBtn: { padding: '5px 10px', backgroundColor: '#e74c3c', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' },
     overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
-    modal: { backgroundColor: '#fff', padding: '25px', borderRadius: '12px', width: '400px' },
+    modal: { backgroundColor: '#fff', padding: '25px', borderRadius: '12px', width: '450px' },
     inputGroup: { marginBottom: '12px' },
     label: { display: 'block', fontWeight: 'bold', fontSize: '13px', marginBottom: '5px' },
     input: { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '6px', boxSizing: 'border-box' },
