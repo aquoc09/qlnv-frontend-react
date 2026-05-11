@@ -10,10 +10,10 @@ const Login = () => {
         e.preventDefault();
         setLoading(true);
         try {
-            // Gọi API đăng nhập khớp với BE anh đã gửi
+            
             const response = await authApi.login({ username, password });
             
-            // Code 1000 là thành công theo chuẩn BE của anh
+            
             if (response.code === 1000) {
                 // Lưu token vào máy để các module sau sử dụng
                 localStorage.setItem('token', response.result.token);
@@ -21,8 +21,8 @@ const Login = () => {
                 window.location.href = '/employee'; 
             }
         } catch (error) {
-            // Lấy thông báo lỗi từ GlobalExceptionHandler của BE
-            alert("Đăng nhập thất bại! Kiểm tra tài khoản hoặc Server BE.");
+            
+            alert("Đăng nhập thất bại!");
         } finally {
             setLoading(false);
         }
@@ -66,7 +66,7 @@ const Login = () => {
     );
 };
 
-// Phần trang trí giao diện đơn giản cho anh dễ nhìn
+
 const styles = {
     container: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#e9ecef' },
     form: { padding: '40px', background: '#fff', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', width: '400px', textAlign: 'center' },
@@ -77,3 +77,4 @@ const styles = {
 };
 
 export default Login;
+// how
