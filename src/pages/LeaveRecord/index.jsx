@@ -95,6 +95,20 @@ const LeaveRecordList = () => {
             alert("Vui lòng chọn đầy đủ thông tin!");
             return;
         }
+
+        // Kiểm tra ngày không được quá khứ
+        const today = new Date().toISOString().split('T')[0];
+        if (formData.startDate < today || formData.endDate < today) {
+            alert("Không được chọn ngày quá khứ!");
+            return;
+        }
+
+        // Kiểm tra ngày bắt đầu không được sau ngày kết thúc
+        if (formData.startDate > formData.endDate) {
+            alert("Ngày bắt đầu không được sau ngày kết thúc!");
+            return;
+        }
+
         try {
             await leaveRecordApi.create(formData);
             alert("Tạo đơn thành công!");
